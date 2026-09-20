@@ -1,0 +1,5 @@
+[functions.send-digest]
+verify_jwt = false
+
+[functions.reach-out]
+verify_jwt = false
