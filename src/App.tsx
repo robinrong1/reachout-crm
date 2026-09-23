@@ -1,42 +1,150 @@
 import { useEffect, useState } from 'react'
+import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router'
 import type { Session } from '@supabase/supabase-js'
-import { Navbar } from './components/Navbar'
-import { supabase } from './lib/supabase'
+import { ErrorBanner } from './components/ErrorBanner'
+import { NavSnackbar } from './components/NavSnackbar'
+import { Sidebar } from './components/Sidebar'
+import { TopBar } from './components/TopBar'
+import { countContacts } from './lib/contacts'
+import { isSupabaseConfigured, supabase } from './lib/supabase'
 import { ensureUserProfile } from './lib/users'
-import { Auth } from './pages/Auth'
+import { Auth, ResetPassword } from './pages/Auth'
 import { ContactDetail } from './pages/ContactDetail'
 import { ContactList } from './pages/ContactList'
 import { Dashboard } from './pages/Dashboard'
+import { GmailCallback } from './pages/GmailCallback'
+import { McpAuthorize } from './pages/McpAuthorize'
+import { GmailReview } from './pages/GmailReview'
+import { Home } from './pages/Home'
 import { NewContact } from './pages/NewContact'
+import { Settings } from './pages/Settings'
+import { Timeline } from './pages/Timeline'
+import { Welcome, welcomeWasSkipped } from './pages/Welcome'
 
-type Screen =
-  | { name: 'dashboard' }
-  | { name: 'list' }
-  | { name: 'new' }
-  | { name: 'detail'; id: string; from: 'dashboard' | 'list' }
+function navCurrent(pathname: string) {
+  if (pathname.startsWith('/settings') || pathname.startsWith('/import')) return 'settings' as const
+  if (pathname === '/' || pathname === '/home' || pathname.startsWith('/welcome')) return 'home' as const
+  if (pathname.startsWith('/contacts')) return 'contacts' as const
+  if (pathname.startsWith('/timeline')) return 'timeline' as const
+  if (pathname.startsWith('/keep-in-touch')) return 'keep-in-touch' as const
+  return 'home' as const
+}
+
+function AppShell({
+  email,
+  profileError,
+  onSignOut,
+}: {
+  email?: string | null
+  profileError: string | null
+  onSignOut: () => void
+}) {
+  const location = useLocation()
+  const current = navCurrent(location.pathname)
+
+  return (
+    <div className="flex min-h-svh bg-[var(--paper)] text-left">
+      <a href="#main-content" className="skip-link">
+        Skip to content
+      </a>
+      <Sidebar current={current} email={email} onSignOut={onSignOut} />
+      <div className="flex min-w-0 flex-1 flex-col paper-canvas">
+        <TopBar compact={current === 'timeline'} />
+        <main id="main-content" className="paper-main" tabIndex={-1}>
+          {profileError ? (
+            <div className="mb-6">
+              <ErrorBanner
+                message={`Could not create your profile: ${profileError}. Apply the latest schema.sql (including users RLS) in Supabase, then sign out and sign in again.`}
+              />
+            </div>
+          ) : null}
+          <Outlet />
+        </main>
+      </div>
+      <NavSnackbar current={current} />
+    </div>
+  )
+}
+
+function HomeGate() {
+  const [gate, setGate] = useState<'loading' | 'home' | 'welcome'>(() =>
+    welcomeWasSkipped() ? 'home' : 'loading',
+  )
+
+  useEffect(() => {
+    if (welcomeWasSkipped()) return
+    let cancelled = false
+    void countContacts().then(({ count, error }) => {
+      if (cancelled) return
+      if (error || count > 0) setGate('home')
+      else setGate('welcome')
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  if (gate === 'loading') {
+    return (
+      <p role="status" aria-busy="true">
+        Loading…
+      </p>
+    )
+  }
+  if (gate === 'welcome') return <Navigate to="/welcome" replace />
+  return <Home />
+}
+
+function KeepInTouch() {
+  const navigate = useNavigate()
+  return (
+    <Dashboard
+      onViewContact={(id) => navigate(`/contacts/${id}`, { state: { from: '/keep-in-touch' } })}
+    />
+  )
+}
 
 function App() {
   const [session, setSession] = useState<Session | null>(null)
-  const [loading, setLoading] = useState(true)
+  const [loading, setLoading] = useState(isSupabaseConfigured)
+  const [sessionError, setSessionError] = useState<string | null>(null)
   const [profileError, setProfileError] = useState<string | null>(null)
-  const [screen, setScreen] = useState<Screen>({ name: 'dashboard' })
+  const [needsNewPassword, setNeedsNewPassword] = useState(false)
 
   useEffect(() => {
+    if (!isSupabaseConfigured) {
+      return
+    }
+
     let cancelled = false
 
-    supabase.auth.getSession().then(({ data }) => {
-      if (!cancelled) {
-        setSession(data.session)
+    supabase.auth
+      .getSession()
+      .then(({ data, error }) => {
+        if (cancelled) return
+        if (error) {
+          setSessionError(error.message)
+          setSession(null)
+        } else {
+          setSession(data.session)
+        }
         setLoading(false)
-      }
-    })
+      })
+      .catch((error: unknown) => {
+        if (cancelled) return
+        setSessionError(error instanceof Error ? error.message : 'Could not load session')
+        setLoading(false)
+      })
 
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, nextSession) => {
+    } = supabase.auth.onAuthStateChange((event, nextSession) => {
       setSession(nextSession)
+      setSessionError(null)
+      if (event === 'PASSWORD_RECOVERY') setNeedsNewPassword(true)
       if (!nextSession) {
-        setScreen({ name: 'dashboard' })
+        setProfileError(null)
+        setNeedsNewPassword(false)
       }
     })
 
@@ -48,7 +156,6 @@ function App() {
 
   useEffect(() => {
     if (!session?.user) {
-      setProfileError(null)
       return
     }
 
@@ -65,10 +172,33 @@ function App() {
     }
   }, [session])
 
+  if (!isSupabaseConfigured) {
+    return (
+      <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center px-4 py-12">
+        <h1 className="page-title">Reach</h1>
+        <ErrorBanner message="Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY. Copy .env.example to .env.local and restart the dev server." />
+      </main>
+    )
+  }
+
   if (loading) {
     return (
-      <main className="flex min-h-svh items-center justify-center px-6">
-        <p>Loading session…</p>
+      <main className="flex min-h-svh items-center justify-center px-4" aria-busy="true">
+        <p role="status">Loading…</p>
+      </main>
+    )
+  }
+
+  if (sessionError && !session) {
+    return (
+      <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center px-4 py-12">
+        <h1 className="page-title">Reach</h1>
+        <ErrorBanner
+          message={sessionError}
+          onRetry={() => {
+            window.location.reload()
+          }}
+        />
       </main>
     )
   }
@@ -77,52 +207,40 @@ function App() {
     return <Auth />
   }
 
-  const navCurrent = screen.name === 'dashboard' || (screen.name === 'detail' && screen.from === 'dashboard')
-    ? 'dashboard'
-    : 'contacts'
+  if (needsNewPassword) {
+    return <ResetPassword onComplete={() => setNeedsNewPassword(false)} />
+  }
 
   return (
-    <main className="mx-auto flex min-h-svh w-full max-w-2xl flex-col gap-6 px-6 py-10 text-left">
-      <Navbar
-        current={navCurrent}
-        onDashboard={() => setScreen({ name: 'dashboard' })}
-        onContacts={() => setScreen({ name: 'list' })}
-        onSignOut={() => {
-          void supabase.auth.signOut()
-        }}
-      />
-
-      <p className="text-sm">
-        Signed in as <strong>{session.user.email}</strong>
-      </p>
-
-      {profileError ? (
-        <p className="text-sm text-red-600" role="alert">
-          Could not create your profile: {profileError}. Apply the latest{' '}
-          <code>schema.sql</code> (including users RLS) in Supabase, then sign out
-          and sign in again.
-        </p>
-      ) : screen.name === 'new' ? (
-        <NewContact
-          onCancel={() => setScreen({ name: 'list' })}
-          onCreated={(id) => setScreen({ name: 'detail', id, from: 'list' })}
-        />
-      ) : screen.name === 'detail' ? (
-        <ContactDetail
-          id={screen.id}
-          onBack={() =>
-            setScreen(screen.from === 'list' ? { name: 'list' } : { name: 'dashboard' })
+    <BrowserRouter>
+      <Routes>
+        <Route
+          element={
+            <AppShell
+              email={session.user.email}
+              profileError={profileError}
+              onSignOut={() => {
+                void supabase.auth.signOut()
+              }}
+            />
           }
-        />
-      ) : screen.name === 'list' ? (
-        <ContactList
-          onNew={() => setScreen({ name: 'new' })}
-          onOpen={(id) => setScreen({ name: 'detail', id, from: 'list' })}
-        />
-      ) : (
-        <Dashboard onViewContact={(id) => setScreen({ name: 'detail', id, from: 'dashboard' })} />
-      )}
-    </main>
+        >
+          <Route path="/" element={<HomeGate />} />
+          <Route path="/home" element={<Navigate to="/" replace />} />
+          <Route path="/welcome" element={<Welcome />} />
+          <Route path="/settings" element={<Settings />} />
+          <Route path="/oauth/authorize" element={<McpAuthorize />} />
+          <Route path="/import/gmail/callback" element={<GmailCallback />} />
+          <Route path="/import/gmail" element={<GmailReview />} />
+          <Route path="/keep-in-touch" element={<KeepInTouch />} />
+          <Route path="/contacts" element={<ContactList />} />
+          <Route path="/contacts/new" element={<NewContact />} />
+          <Route path="/contacts/:id" element={<ContactDetail />} />
+          <Route path="/timeline" element={<Timeline />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </BrowserRouter>
   )
 }
 

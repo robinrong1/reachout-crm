@@ -1,43 +1,50 @@
+import { Avatar } from './Avatar'
+import { ReachLinks, ReachedOutButton } from './ReachActions'
+import { formatCadence } from '../lib/cadence'
 import { formatDisplayDate } from '../utils/dates'
 import type { OverdueContact } from '../lib/overdue'
 
 type ContactCardProps = {
   contact: OverdueContact
   busy: boolean
-  onReachedOut: () => void
+  featured?: boolean
+  onReachedOut: (note: string | null) => void
+  onSnooze: () => void
   onView: () => void
 }
 
-export function ContactCard({ contact, busy, onReachedOut, onView }: ContactCardProps) {
+export function ContactCard({ contact, busy, featured = false, onReachedOut, onSnooze, onView }: ContactCardProps) {
   const overdueLabel =
     contact.days_overdue === 0
       ? 'Due today'
-      : `Overdue by ${contact.days_overdue} day${contact.days_overdue === 1 ? '' : 's'}`
+      : `${contact.days_overdue} day${contact.days_overdue === 1 ? '' : 's'} overdue`
+
+  const lastTalked = contact.last_contact_date ? formatDisplayDate(contact.last_contact_date) : 'Never'
 
   return (
-    <article className="flex flex-col gap-3 rounded-md border border-[var(--border)] px-4 py-4">
-      <p className="m-0 text-sm font-medium text-[var(--accent)]">{overdueLabel}</p>
-      <h3 className="m-0 text-lg font-medium text-[var(--text-h)]">{contact.name}</h3>
-      <p className="m-0 text-sm text-[var(--text)]">
-        Last contacted: {formatDisplayDate(contact.last_contact_date)}
-      </p>
-      <p className="m-0 text-sm text-[var(--text)]">Cadence: every {contact.cadence_days} days</p>
-      <div className="mt-1 flex flex-wrap gap-2">
-        <button
-          type="button"
-          disabled={busy}
-          className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm text-white disabled:opacity-60"
-          onClick={onReachedOut}
-        >
-          {busy ? 'Saving…' : 'Reached out today'}
+    <article className={featured ? 'home-card home-card-featured' : 'home-card'}>
+      <button type="button" className="home-card-button" onClick={onView}>
+        <div className="home-card-row">
+          <Avatar name={contact.name} size="md" />
+          <p className="home-card-time">{overdueLabel}</p>
+        </div>
+        <h3 className="home-card-title">{contact.name}</h3>
+        <p className="home-card-body">
+          Last talked {lastTalked} · {formatCadence(contact.cadence_days)}
+        </p>
+        {contact.nudge ? <p className="home-card-body">{contact.nudge}</p> : null}
+      </button>
+      <div className="home-card-actions">
+        <ReachedOutButton
+          label="I reached out"
+          busy={busy}
+          ariaLabel={`Mark that you reached out to ${contact.name} today`}
+          onCommit={onReachedOut}
+        />
+        <button type="button" className="chip-action" onClick={onSnooze}>
+          Not this week
         </button>
-        <button
-          type="button"
-          className="rounded-md border border-[var(--border)] px-3 py-1.5 text-sm"
-          onClick={onView}
-        >
-          View
-        </button>
+        <ReachLinks phone={contact.phone} email={contact.email} />
       </div>
     </article>
   )

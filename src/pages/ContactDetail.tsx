@@ -1,25 +1,37 @@
 import { useEffect, useState } from 'react'
+import { useLocation, useNavigate, useParams } from 'react-router'
+import { Avatar } from '../components/Avatar'
 import { ContactForm } from '../components/ContactForm'
+import { ErrorBanner } from '../components/ErrorBanner'
 import { InteractionForm } from '../components/InteractionForm'
-import { archiveContact, getContact, unarchiveContact, updateContact } from '../lib/contacts'
+import { ReachLinks, ReachedOutButton } from '../components/ReachActions'
+import { archiveContact, clearSnooze, getContact, unarchiveContact, updateContact } from '../lib/contacts'
 import {
   createInteraction,
   deleteInteraction,
   listInteractions,
-  localToday,
+  reachedOutToday,
   updateInteraction,
 } from '../lib/interactions'
-import { relationshipStateForContact } from '../lib/overdue'
+import { formatCadence } from '../lib/cadence'
+import { timelineEventLabel, timelineNoteBody } from '../lib/timeline'
+import { isHiddenBySnooze, relationshipStateForContact } from '../lib/overdue'
 import { getUserTimezone } from '../lib/users'
-import { formatDisplayDate } from '../utils/dates'
-import type { Contact, Interaction } from '../types/database'
+import { formatDisplayDate, todayInTimeZone } from '../utils/dates'
+import type { Contact, Group, Interaction } from '../types/database'
+import {
+  addContactToGroup,
+  listContactGroups,
+  listGroups,
+  removeContactFromGroup,
+} from '../lib/groups'
 
-type ContactDetailProps = {
-  id: string
-  onBack: () => void
-}
-
-export function ContactDetail({ id, onBack }: ContactDetailProps) {
+export function ContactDetail() {
+  const { id = '' } = useParams()
+  const navigate = useNavigate()
+  const location = useLocation()
+  const backTo = (location.state as { from?: string } | null)?.from ?? '/contacts'
+  const onBack = () => navigate(backTo)
   const [contact, setContact] = useState<Contact | null>(null)
   const [interactions, setInteractions] = useState<Interaction[]>([])
   const [timeZone, setTimeZone] = useState('UTC')
@@ -28,6 +40,8 @@ export function ContactDetail({ id, onBack }: ContactDetailProps) {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [reachingOut, setReachingOut] = useState(false)
+  const [groups, setGroups] = useState<Group[]>([])
+  const [groupIds, setGroupIds] = useState<string[]>([])
 
   async function loadInteractions() {
     const { data, error } = await listInteractions(id)
@@ -42,8 +56,8 @@ export function ContactDetail({ id, onBack }: ContactDetailProps) {
   useEffect(() => {
     let cancelled = false
 
-    Promise.all([getContact(id), listInteractions(id), getUserTimezone()]).then(
-      ([contactResult, interactionResult, timezoneResult]) => {
+    Promise.all([getContact(id), listInteractions(id), getUserTimezone(), listGroups(), listContactGroups([id])]).then(
+      ([contactResult, interactionResult, timezoneResult, groupsResult, membershipResult]) => {
         if (cancelled) return
 
         if (contactResult.error) {
@@ -66,6 +80,18 @@ export function ContactDetail({ id, onBack }: ContactDetailProps) {
           setTimeZone(timezoneResult.timezone)
         }
 
+        if (groupsResult.error) {
+          setError(groupsResult.error.message)
+        } else {
+          setGroups(groupsResult.data ?? [])
+        }
+
+        if (membershipResult.error) {
+          setError(membershipResult.error.message)
+        } else {
+          setGroupIds((membershipResult.data ?? []).map((row) => row.group_id))
+        }
+
         setLoading(false)
       },
     )
@@ -76,20 +102,18 @@ export function ContactDetail({ id, onBack }: ContactDetailProps) {
   }, [id])
 
   if (loading) {
-    return <p>Loading contact…</p>
+    return (
+      <p role="status" aria-busy="true">
+        Loading…
+      </p>
+    )
   }
 
   if (!contact) {
     return (
       <section className="flex flex-col gap-4">
-        <p className="text-sm text-red-600" role="alert">
-          {error ?? 'Contact not found.'}
-        </p>
-        <button
-          type="button"
-          className="w-fit rounded-md border border-[var(--border)] px-3 py-1.5 text-sm"
-          onClick={onBack}
-        >
+        <ErrorBanner message={error ?? 'That person was not found.'} />
+        <button type="button" className="text-link self-start" onClick={onBack}>
           Back
         </button>
       </section>
@@ -98,34 +122,79 @@ export function ContactDetail({ id, onBack }: ContactDetailProps) {
 
   const editing = interactions.find((item) => item.id === editingId)
   const status = relationshipStateForContact(contact, interactions, timeZone)
+  const pausedUntil = contact.snoozed_until
+  const paused = isHiddenBySnooze(todayInTimeZone(timeZone), pausedUntil)
+  const contactId = contact.id
+
+  async function resume() {
+    const { data, error: clearError } = await clearSnooze(contactId)
+    if (clearError) {
+      setError(clearError.message)
+      return
+    }
+    if (data) setContact(data)
+  }
 
   return (
-    <section className="flex flex-col gap-6">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="m-0 text-xl font-medium text-[var(--text-h)]">{contact.name}</h2>
-        <button
-          type="button"
-          className="rounded-md border border-[var(--border)] px-3 py-1.5 text-sm"
-          onClick={onBack}
-        >
+    <section className="page-shell feed-shell" aria-labelledby="person-heading">
+      <header className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+        <div className="flex items-start gap-4">
+          <Avatar name={contact.name} size="lg" />
+          <div className="masthead">
+            <p className="masthead-eyebrow">
+              {contact.relationship_type || 'Someone you care about'}
+              {contact.archived ? ' · archived' : ''}
+            </p>
+            <h2 id="person-heading" className="masthead-title">
+              {contact.name}
+            </h2>
+          </div>
+        </div>
+        <button type="button" className="text-link self-start" onClick={onBack}>
           Back
         </button>
-      </div>
+      </header>
 
-      {error ? (
-        <p className="text-sm text-red-600" role="alert">
-          {error}
+      {error ? <ErrorBanner message={error} /> : null}
+
+      {paused && pausedUntil ? (
+        <p className="m-0 text-sm text-[var(--text)]">
+          Paused until {formatDisplayDate(pausedUntil)}.{' '}
+          <button type="button" className="text-link" onClick={() => void resume()}>
+            Clear
+          </button>
         </p>
       ) : null}
 
+      <div className="person-meta">
+        <p>
+          Last talked
+          <strong>{status.lastContactDate ? formatDisplayDate(status.lastContactDate) : 'Never'}</strong>
+        </p>
+        <p>
+          Next check-in
+          <strong>{formatDisplayDate(status.nextDueDate)}</strong>
+        </p>
+        <p>
+          Status
+          <strong>
+            {status.isOverdue
+              ? status.daysOverdue === 0
+                ? 'Due today'
+                : `${status.daysOverdue} day${status.daysOverdue === 1 ? '' : 's'} overdue`
+              : `${Math.abs(status.daysOverdue)} day${Math.abs(status.daysOverdue) === 1 ? '' : 's'} until due`}
+          </strong>
+        </p>
+      </div>
+
       <div className="flex flex-col gap-3">
-        <h3 className="m-0 text-lg font-medium text-[var(--text-h)]">Profile</h3>
+        <h3 className="home-section-label">About them</h3>
         {editingProfile ? (
           <>
             <ContactForm
               key={contact.id}
               initial={contact}
-              submitLabel="Save changes"
+              submitLabel="Save"
               onSubmit={async (input) => {
                 const { data, error } = await updateContact(contact.id, input)
                 if (error) throw error
@@ -133,24 +202,24 @@ export function ContactDetail({ id, onBack }: ContactDetailProps) {
                 setEditingProfile(false)
               }}
             />
-            <button
-              type="button"
-              className="w-fit rounded-md border border-[var(--border)] px-3 py-1.5 text-sm"
-              onClick={() => setEditingProfile(false)}
-            >
+            <button type="button" className="text-link self-start" onClick={() => setEditingProfile(false)}>
               Cancel
             </button>
           </>
         ) : (
           <>
-            <dl className="m-0 grid gap-2 text-sm">
+            <dl className="m-0 grid gap-4 text-sm sm:grid-cols-2">
               <div>
-                <dt className="text-[var(--text)]">Relationship</dt>
-                <dd className="m-0 text-[var(--text-h)]">{contact.relationship_type || '—'}</dd>
+                <dt className="text-[var(--text)]">Stay in touch</dt>
+                <dd className="m-0 text-[var(--text-h)]">{formatCadence(contact.cadence_days)}</dd>
               </div>
               <div>
-                <dt className="text-[var(--text)]">Cadence</dt>
-                <dd className="m-0 text-[var(--text-h)]">every {contact.cadence_days} days</dd>
+                <dt className="text-[var(--text)]">Phone</dt>
+                <dd className="m-0 text-[var(--text-h)]">{contact.phone || '—'}</dd>
+              </div>
+              <div>
+                <dt className="text-[var(--text)]">Email</dt>
+                <dd className="m-0 text-[var(--text-h)]">{contact.email || '—'}</dd>
               </div>
               <div>
                 <dt className="text-[var(--text)]">Birthday</dt>
@@ -158,25 +227,53 @@ export function ContactDetail({ id, onBack }: ContactDetailProps) {
                   {contact.birthday ? formatDisplayDate(contact.birthday) : '—'}
                 </dd>
               </div>
-              <div>
+              <div className="sm:col-span-2">
+                <dt className="text-[var(--text)]">Nudge</dt>
+                <dd className="m-0 text-[var(--text-h)]">{contact.nudge || '—'}</dd>
+              </div>
+              <div className="sm:col-span-2">
                 <dt className="text-[var(--text)]">Notes</dt>
                 <dd className="m-0 whitespace-pre-wrap text-[var(--text-h)]">{contact.notes || '—'}</dd>
               </div>
-              {contact.archived ? (
-                <p className="m-0 text-sm text-[var(--text)]">This contact is archived.</p>
-              ) : null}
+              <div className="sm:col-span-2">
+                <dt className="text-[var(--text)]">Groups</dt>
+                <dd className="m-0 mt-2 flex flex-col gap-2">
+                  {groups.length === 0 ? (
+                    <span className="text-[var(--text)]">Create groups from Contacts if you want to sort people.</span>
+                  ) : (
+                    groups.map((group) => (
+                      <label key={group.id} className="flex items-center gap-2 text-[var(--text-h)]">
+                        <input
+                          type="checkbox"
+                          checked={groupIds.includes(group.id)}
+                          onChange={async () => {
+                            const belongs = groupIds.includes(group.id)
+                            const result = belongs
+                              ? await removeContactFromGroup(contact.id, group.id)
+                              : await addContactToGroup(contact.id, group.id)
+                            if (result.error) {
+                              setError(result.error.message)
+                              return
+                            }
+                            setGroupIds((current) =>
+                              belongs ? current.filter((id) => id !== group.id) : [...current, group.id],
+                            )
+                          }}
+                        />
+                        {group.name}
+                      </label>
+                    ))
+                  )}
+                </dd>
+              </div>
             </dl>
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="button"
-                className="rounded-md border border-[var(--border)] px-3 py-1.5 text-sm"
-                onClick={() => setEditingProfile(true)}
-              >
+            <div className="flex flex-wrap items-center gap-3">
+              <button type="button" className="text-link" onClick={() => setEditingProfile(true)}>
                 Edit
               </button>
               <button
                 type="button"
-                className="rounded-md border border-[var(--border)] px-3 py-1.5 text-sm"
+                className="text-link"
                 onClick={async () => {
                   const result = contact.archived
                     ? await unarchiveContact(contact.id)
@@ -190,56 +287,43 @@ export function ContactDetail({ id, onBack }: ContactDetailProps) {
               >
                 {contact.archived ? 'Unarchive' : 'Archive'}
               </button>
+              <ReachLinks phone={contact.phone} email={contact.email} />
               {status.isOverdue && !contact.archived ? (
-                <button
-                  type="button"
-                  disabled={reachingOut}
-                  className="rounded-md bg-[var(--accent)] px-3 py-1.5 text-sm text-white disabled:opacity-60"
-                  onClick={async () => {
-                    setReachingOut(true)
-                    setError(null)
-                    const { error } = await createInteraction({
-                      contact_id: contact.id,
-                      occurred_on: localToday(),
-                    })
-                    setReachingOut(false)
-                    if (error) {
-                      setError(error.message)
-                      return
-                    }
-                    await loadInteractions()
+                <ReachedOutButton
+                  label="I reached out"
+                  busy={reachingOut}
+                  ariaLabel={`Mark that you reached out to ${contact.name} today`}
+                  onCommit={(note) => {
+                    void (async () => {
+                      setReachingOut(true)
+                      setError(null)
+                      const { error } = await reachedOutToday(contact.id, note)
+                      setReachingOut(false)
+                      if (error) {
+                        setError(error.message)
+                        return
+                      }
+                      await loadInteractions()
+                    })()
                   }}
-                >
-                  {reachingOut ? 'Saving…' : 'Reached out today'}
-                </button>
+                />
               ) : null}
             </div>
           </>
         )}
       </div>
 
-      <div className="rounded-md border border-[var(--border)] px-3 py-3 text-sm">
-        <h3 className="m-0 mb-2 text-base font-medium text-[var(--text-h)]">Relationship status</h3>
-        <p>Last contact: {formatDisplayDate(status.lastContactDate)}</p>
-        <p>Next due: {formatDisplayDate(status.nextDueDate)}</p>
-        <p>
-          {status.isOverdue
-            ? status.daysOverdue === 0
-              ? 'Due today'
-              : `Overdue by ${status.daysOverdue} day${status.daysOverdue === 1 ? '' : 's'}`
-            : `Not overdue (${Math.abs(status.daysOverdue)} day${Math.abs(status.daysOverdue) === 1 ? '' : 's'} until due)`}
-        </p>
-      </div>
-
-      <div className="flex flex-col gap-3 border-t border-[var(--border)] pt-6">
-        <h3 className="m-0 text-lg font-medium text-[var(--text-h)]">Interaction history</h3>
-        <p className="text-sm text-[var(--text)]">Newest first. Date is required; a note is optional.</p>
+      <div className="flex flex-col gap-4">
+        <div>
+          <h3 className="home-section-label">Conversations</h3>
+          <p className="page-kicker">Newest first. A date is enough; a note is optional.</p>
+        </div>
 
         {editing ? (
           <InteractionForm
             key={editing.id}
             initial={editing}
-            submitLabel="Save interaction"
+            submitLabel="Save"
             onCancel={() => setEditingId(null)}
             onSubmit={async (input) => {
               const { error } = await updateInteraction(editing.id, input)
@@ -250,7 +334,7 @@ export function ContactDetail({ id, onBack }: ContactDetailProps) {
           />
         ) : (
           <InteractionForm
-            submitLabel="Log interaction"
+            submitLabel="Log a conversation"
             onSubmit={async (input) => {
               const { error } = await createInteraction({
                 contact_id: contact.id,
@@ -264,29 +348,27 @@ export function ContactDetail({ id, onBack }: ContactDetailProps) {
         )}
 
         {interactions.length === 0 ? (
-          <p className="text-[var(--text)]">No interactions yet.</p>
+          <p className="text-[var(--text)]" role="status">
+            No conversations yet.
+          </p>
         ) : (
           <ul className="m-0 flex list-none flex-col gap-3 p-0">
             {interactions.map((interaction) => (
-              <li key={interaction.id} className="border-b border-[var(--border)] pb-3">
-                <p className="font-medium text-[var(--text-h)]">{formatDisplayDate(interaction.occurred_on)}</p>
-                {interaction.note ? (
-                  <p className="mt-1 text-[var(--text)]">{interaction.note}</p>
-                ) : (
-                  <p className="mt-1 text-sm text-[var(--text)]">No note</p>
-                )}
-                <div className="mt-2 flex gap-2">
-                  <button
-                    type="button"
-                    className="rounded-md border border-[var(--border)] px-3 py-1 text-sm"
-                    onClick={() => setEditingId(interaction.id)}
-                  >
+              <li key={interaction.id} className="conversation-note">
+                <p className="home-card-time">{formatDisplayDate(interaction.occurred_on)}</p>
+                <p className="timeline-event-label mt-1">{timelineEventLabel(interaction.note)}</p>
+                {timelineNoteBody(interaction.note) ? (
+                  <p className="timeline-note-text mt-2">{timelineNoteBody(interaction.note)}</p>
+                ) : null}
+                <div className="mt-3 flex flex-wrap gap-3">
+                  <button type="button" className="text-link" onClick={() => setEditingId(interaction.id)}>
                     Edit
                   </button>
                   <button
                     type="button"
-                    className="rounded-md border border-[var(--border)] px-3 py-1 text-sm"
+                    className="text-link"
                     onClick={async () => {
+                      if (!window.confirm('Delete this conversation?')) return
                       const { error } = await deleteInteraction(interaction.id)
                       if (error) {
                         setError(error.message)

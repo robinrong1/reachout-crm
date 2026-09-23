@@ -3,3 +3,12 @@ verify_jwt = false
 
 [functions.reach-out]
 verify_jwt = false
+
+[functions.gmail-oauth]
+verify_jwt = false
+
+[functions.gmail-import]
+verify_jwt = false
+
+[functions.mcp]
+verify_jwt = false

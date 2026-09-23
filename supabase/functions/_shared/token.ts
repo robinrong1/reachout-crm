@@ -2,6 +2,7 @@ export type ReachOutPayload = {
   userId: string
   contactId: string
   exp: number
+  action?: 'snooze'
 }
 
 function toBase64Url(bytes: Uint8Array) {
@@ -55,6 +56,7 @@ export async function verifyReachOutToken(secret: string, token: string): Promis
   try {
     const payload = JSON.parse(new TextDecoder().decode(fromBase64Url(body))) as ReachOutPayload
     if (!payload.userId || !payload.contactId || typeof payload.exp !== 'number') return null
+    if (payload.action != null && payload.action !== 'snooze') return null
     if (Date.now() > payload.exp) return null
     return payload
   } catch {

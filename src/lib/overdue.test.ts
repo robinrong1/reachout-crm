@@ -1,32 +1,49 @@
 import { describe, expect, it } from 'vitest'
-import { computeRelationshipState, lastContactDate, nextDueDate } from './overdue'
-import { addDays, calendarDateInTimeZone, diffDays } from '../utils/dates'
+import {
+  computeRelationshipState,
+  isHiddenBySnooze,
+  lastContactDate,
+  nextDueDate,
+  relationshipStateForContact,
+} from './overdue'
+import type { Contact, Interaction } from '../types/database'
 
-describe('date helpers', () => {
-  it('adds calendar days like Postgres date + int', () => {
-    expect(addDays('2026-01-31', 1)).toBe('2026-02-01')
-    expect(addDays('2024-02-28', 1)).toBe('2024-02-29')
+function state(overrides: Partial<Parameters<typeof computeRelationshipState>[0]> = {}) {
+  return computeRelationshipState({
+    today: '2026-01-31',
+    cadenceDays: 30,
+    latestOccurredOn: '2026-01-01',
+    ...overrides,
   })
+}
 
-  it('diffs calendar days like Postgres date - date', () => {
-    expect(diffDays('2026-02-10', '2026-02-01')).toBe(9)
-    expect(diffDays('2026-02-01', '2026-02-10')).toBe(-9)
-  })
-
-  it('converts a timestamptz to the user local calendar date', () => {
-    const instant = new Date('2026-01-02T03:00:00.000Z')
-    expect(calendarDateInTimeZone(instant, 'UTC')).toBe('2026-01-02')
-    expect(calendarDateInTimeZone(instant, 'America/Toronto')).toBe('2026-01-01')
-  })
-})
+function contact(overrides: Partial<Contact> = {}): Contact {
+  return {
+    id: 'c1',
+    user_id: 'u1',
+    name: 'Sarah',
+    relationship_type: 'friend',
+    cadence_days: 30,
+    birthday: null,
+    notes: null,
+    phone: null,
+    email: null,
+    archived: false,
+    source: 'manual',
+    nudge: null,
+    snoozed_until: null,
+    created_at: '2025-12-01T12:00:00.000Z',
+    ...overrides,
+  }
+}
 
 describe('overdue business rules', () => {
-  it('uses created_at as the baseline when there are no interactions', () => {
-    expect(lastContactDate(null, '2026-01-01')).toBe('2026-01-01')
+  it('has no last-talked date when there are no interactions', () => {
+    expect(lastContactDate(null)).toBeNull()
   })
 
   it('uses the latest interaction date when one exists', () => {
-    expect(lastContactDate('2026-03-12', '2026-01-01')).toBe('2026-03-12')
+    expect(lastContactDate('2026-03-12')).toBe('2026-03-12')
   })
 
   it('computes next due as last contact plus cadence', () => {
@@ -34,63 +51,90 @@ describe('overdue business rules', () => {
     expect(nextDueDate('2026-01-01', 14)).toBe('2026-01-15')
   })
 
-  it('is overdue on the due date (days_overdue >= 0)', () => {
-    const state = computeRelationshipState({
-      today: '2026-01-31',
-      cadenceDays: 30,
-      latestOccurredOn: '2026-01-01',
-      createdAt: '2025-12-01T12:00:00.000Z',
-      timeZone: 'UTC',
-    })
+  it('treats a person with no conversations as due now', () => {
+    const result = state({ latestOccurredOn: null, today: '2026-09-22' })
+    expect(result.lastContactDate).toBeNull()
+    expect(result.nextDueDate).toBe('2026-09-22')
+    expect(result.daysOverdue).toBe(0)
+    expect(result.isOverdue).toBe(true)
+  })
 
-    expect(state.nextDueDate).toBe('2026-01-31')
-    expect(state.daysOverdue).toBe(0)
-    expect(state.isOverdue).toBe(true)
+  it('does not use created_at as a stand-in for last talked', () => {
+    const result = relationshipStateForContact(
+      contact({ created_at: '2020-01-01T00:00:00.000Z' }),
+      [],
+      'America/Toronto',
+      new Date('2026-09-22T16:00:00.000Z'),
+    )
+    expect(result.lastContactDate).toBeNull()
+    expect(result.daysOverdue).toBe(0)
+    expect(result.isOverdue).toBe(true)
+  })
+
+  it('is overdue on the due date (days_overdue >= 0)', () => {
+    const result = state({ today: '2026-01-31' })
+    expect(result.nextDueDate).toBe('2026-01-31')
+    expect(result.daysOverdue).toBe(0)
+    expect(result.isOverdue).toBe(true)
   })
 
   it('is not overdue the day before due', () => {
-    const state = computeRelationshipState({
-      today: '2026-01-30',
-      cadenceDays: 30,
-      latestOccurredOn: '2026-01-01',
-      createdAt: '2025-12-01T12:00:00.000Z',
-      timeZone: 'UTC',
-    })
-
-    expect(state.daysOverdue).toBe(-1)
-    expect(state.isOverdue).toBe(false)
+    const result = state({ today: '2026-01-30' })
+    expect(result.daysOverdue).toBe(-1)
+    expect(result.isOverdue).toBe(false)
   })
 
-  it('sorts by how overdue: later today means a larger days_overdue', () => {
-    const less = computeRelationshipState({
-      today: '2026-02-10',
-      cadenceDays: 30,
-      latestOccurredOn: '2026-01-01',
-      createdAt: '2025-12-01T12:00:00.000Z',
-      timeZone: 'UTC',
-    })
-    const more = computeRelationshipState({
-      today: '2026-02-10',
-      cadenceDays: 14,
-      latestOccurredOn: '2026-01-01',
-      createdAt: '2025-12-01T12:00:00.000Z',
-      timeZone: 'UTC',
-    })
-
+  it('sorts by how overdue: shorter cadence is more overdue on the same day', () => {
+    const less = state({ today: '2026-02-10', cadenceDays: 30 })
+    const more = state({ today: '2026-02-10', cadenceDays: 14 })
     expect(more.daysOverdue).toBeGreaterThan(less.daysOverdue)
   })
 
-  it('uses the local created_at date when there are no interactions', () => {
-    const state = computeRelationshipState({
-      today: '2026-01-31',
+  it('is not overdue after logging an interaction for today', () => {
+    const result = state({
+      today: '2026-02-10',
+      latestOccurredOn: '2026-02-10',
       cadenceDays: 30,
-      latestOccurredOn: null,
-      createdAt: '2026-01-02T03:00:00.000Z',
-      timeZone: 'America/Toronto',
     })
+    expect(result.lastContactDate).toBe('2026-02-10')
+    expect(result.nextDueDate).toBe('2026-03-12')
+    expect(result.isOverdue).toBe(false)
+  })
 
-    expect(state.lastContactDate).toBe('2026-01-01')
-    expect(state.nextDueDate).toBe('2026-01-31')
-    expect(state.isOverdue).toBe(true)
+  it('picks the latest occurred_on among several interactions', () => {
+    const interactions = [
+      { id: 'i1', contact_id: 'c1', occurred_on: '2026-01-01', note: null, created_at: '2026-01-01T12:00:00.000Z' },
+      { id: 'i2', contact_id: 'c1', occurred_on: '2026-01-20', note: 'later', created_at: '2026-01-20T12:00:00.000Z' },
+      { id: 'i3', contact_id: 'c1', occurred_on: '2025-12-15', note: 'earlier', created_at: '2025-12-15T12:00:00.000Z' },
+    ] satisfies Interaction[]
+
+    const result = relationshipStateForContact(
+      contact(),
+      interactions,
+      'UTC',
+      new Date('2026-01-25T12:00:00.000Z'),
+    )
+
+    expect(result.lastContactDate).toBe('2026-01-20')
+    expect(result.nextDueDate).toBe('2026-02-19')
+    expect(result.isOverdue).toBe(false)
+  })
+
+  it('uses the user-local today when deciding overdue', () => {
+    const result = relationshipStateForContact(
+      contact(),
+      [{ id: 'i1', contact_id: 'c1', occurred_on: '2026-09-21', note: null, created_at: '2026-09-21T12:00:00.000Z' }],
+      'America/Toronto',
+      new Date('2026-09-22T03:00:00.000Z'),
+    )
+    expect(result.lastContactDate).toBe('2026-09-21')
+    expect(result.isOverdue).toBe(false)
+  })
+
+  it('hides a person until the snooze date, and brings them back that morning', () => {
+    expect(isHiddenBySnooze('2026-09-22', '2026-09-29')).toBe(true)
+    expect(isHiddenBySnooze('2026-09-29', '2026-09-29')).toBe(false)
+    expect(isHiddenBySnooze('2026-09-30', '2026-09-29')).toBe(false)
+    expect(isHiddenBySnooze('2026-09-22', null)).toBe(false)
   })
 })

@@ -47,6 +47,13 @@ export function todayInTimeZone(timeZone: string, now = new Date()) {
   return calendarDateInTimeZone(now, timeZone)
 }
 
+/** Month heading for a YYYY-MM-DD date, e.g. SEP 2026. */
+export function formatMonthHeading(isoDate: string) {
+  const [year, month] = isoDate.split('-').map(Number)
+  return new Date(year, month - 1, 1)
+    .toLocaleDateString('en-US', { month: 'short', year: 'numeric' })
+    .toUpperCase()
+}
 /** Display a YYYY-MM-DD calendar date in the user's locale. */
 export function formatDisplayDate(isoDate: string) {
   const [year, month, day] = isoDate.split('-').map(Number)
@@ -55,4 +62,19 @@ export function formatDisplayDate(isoDate: string) {
     day: 'numeric',
     year: 'numeric',
   })
+}
+
+function localCalendarDate(isoDate: string) {
+  const [year, month, day] = isoDate.split('-').map(Number)
+  return new Date(year, month - 1, day)
+}
+
+/** Weekday for a YYYY-MM-DD date, e.g. Thursday. */
+export function formatWeekday(isoDate: string) {
+  return localCalendarDate(isoDate).toLocaleDateString('en-US', { weekday: 'long' })
+}
+
+/** Month and day without year — birthdays on Home should not spotlight age. */
+export function formatMonthDay(isoDate: string) {
+  return localCalendarDate(isoDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }

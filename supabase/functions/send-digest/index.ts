@@ -1,6 +1,7 @@
-import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
+import { createClient, type SupabaseClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { isDigestDue, reminderWasSentOnLocalDate, todayInTimeZone } from '../_shared/dates.ts'
-import { formatDigestEmail } from '../_shared/digest.ts'
+import { formatDigestEmail, type DigestContact } from '../_shared/digest.ts'
+import { primaryGroupName } from '../../../src/lib/groupHeadings.ts'
 import { reachOutExpiry, signReachOutToken } from '../_shared/token.ts'
 
 /**
@@ -25,6 +26,7 @@ type OverdueRow = {
   id: string
   name: string
   days_overdue: number
+  nudge: string | null
 }
 
 type ReminderRow = {
@@ -50,6 +52,7 @@ Deno.serve(async (req) => {
   const tokenSecret = Deno.env.get('DIGEST_TOKEN_SECRET')
 
   if (!supabaseUrl || !serviceKey || !resendKey || !resendFrom || !tokenSecret) {
+    console.error(JSON.stringify({ event: 'digest_job_failed', message: 'Missing function secrets' }))
     return json({ error: 'Missing function secrets' }, 500)
   }
 
@@ -57,18 +60,23 @@ Deno.serve(async (req) => {
   const now = new Date()
   const log = {
     usersConsidered: 0,
+    overdueContactsFound: 0,
     skippedWrongDay: 0,
     skippedAlreadySent: 0,
     skippedNoneOverdue: 0,
     emailsSent: 0,
+    emailsFailed: 0,
     errors: [] as string[],
   }
+
+  console.log(JSON.stringify({ event: 'digest_job_started' }))
 
   const { data: users, error: usersError } = await supabase
     .from('users')
     .select('id, email, timezone, digest_day_of_week')
 
   if (usersError) {
+    console.error(JSON.stringify({ event: 'digest_job_failed', message: usersError.message }))
     return json({ error: usersError.message }, 500)
   }
 
@@ -85,13 +93,14 @@ Deno.serve(async (req) => {
 
       const { data: overdue, error: overdueError } = await supabase
         .from('overdue_contacts')
-        .select('id, name, days_overdue')
+        .select('id, name, days_overdue, nudge')
         .eq('user_id', user.id)
         .order('days_overdue', { ascending: false })
 
       if (overdueError) throw overdueError
 
       const contacts = (overdue ?? []) as OverdueRow[]
+      log.overdueContactsFound += contacts.length
       if (contacts.length === 0) {
         log.skippedNoneOverdue += 1
         continue
@@ -119,16 +128,30 @@ Deno.serve(async (req) => {
 
       const reachOutBase = `${supabaseUrl}/functions/v1/reach-out`
       const reachOutUrls: Record<string, string> = {}
+      const snoozeUrls: Record<string, string> = {}
       for (const contact of contacts) {
+        const exp = reachOutExpiry(now.getTime())
         const token = await signReachOutToken(tokenSecret, {
           userId: user.id,
           contactId: contact.id,
-          exp: reachOutExpiry(now.getTime()),
+          exp,
+        })
+        const snoozeToken = await signReachOutToken(tokenSecret, {
+          userId: user.id,
+          contactId: contact.id,
+          exp,
+          action: 'snooze',
         })
         reachOutUrls[contact.id] = `${reachOutBase}?t=${encodeURIComponent(token)}`
+        snoozeUrls[contact.id] = `${reachOutBase}?t=${encodeURIComponent(snoozeToken)}`
       }
 
-      const email = formatDigestEmail(contacts, reachOutUrls)
+      const groupNames = await groupNamesFor(supabase, user.id, contactIds)
+      const digestContacts: DigestContact[] = contacts.map((contact) => ({
+        ...contact,
+        group_name: groupNames.get(contact.id) ?? null,
+      }))
+      const email = formatDigestEmail(digestContacts, reachOutUrls, snoozeUrls)
       const resendResponse = await fetch('https://api.resend.com/emails', {
         method: 'POST',
         headers: {
@@ -165,6 +188,7 @@ Deno.serve(async (req) => {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unknown error'
       log.errors.push(`${user.id}: ${message}`)
+      log.emailsFailed += 1
       console.error(JSON.stringify({ event: 'digest_user_failed', userId: user.id, message }))
     }
   }
@@ -172,6 +196,48 @@ Deno.serve(async (req) => {
   console.log(JSON.stringify({ event: 'digest_job_finished', ...log }))
   return json(log)
 })
+
+function groupsSchemaMissing(error: { message: string; code?: string }) {
+  const message = error.message.toLowerCase()
+  return (
+    error.code === 'PGRST205' ||
+    error.code === '42P01' ||
+    message.includes('schema cache') ||
+    message.includes('does not exist')
+  )
+}
+
+async function groupNamesFor(supabase: SupabaseClient, userId: string, contactIds: string[]) {
+  const names = new Map<string, string | null>()
+  for (const id of contactIds) names.set(id, null)
+
+  const { data: groups, error: groupsError } = await supabase.from('groups').select('id, name').eq('user_id', userId)
+  if (groupsError) {
+    if (groupsSchemaMissing(groupsError)) return names
+    throw groupsError
+  }
+
+  const { data: memberships, error: memberError } = await supabase
+    .from('contact_groups')
+    .select('contact_id, group_id')
+    .in('contact_id', contactIds)
+  if (memberError) {
+    if (groupsSchemaMissing(memberError)) return names
+    throw memberError
+  }
+
+  const named = (groups ?? []) as { id: string; name: string }[]
+  const idsByContact = new Map<string, string[]>()
+  for (const row of (memberships ?? []) as { contact_id: string; group_id: string }[]) {
+    const list = idsByContact.get(row.contact_id) ?? []
+    list.push(row.group_id)
+    idsByContact.set(row.contact_id, list)
+  }
+  for (const id of contactIds) {
+    names.set(id, primaryGroupName(idsByContact.get(id) ?? [], named))
+  }
+  return names
+}
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {

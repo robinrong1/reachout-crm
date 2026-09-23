@@ -1,7 +1,11 @@
+import { sectionsUnderGroupHeadings } from '../../../src/lib/groupHeadings.ts'
+
 export type DigestContact = {
   id: string
   name: string
   days_overdue: number
+  nudge?: string | null
+  group_name?: string | null
 }
 
 export function sortDigestContacts(contacts: DigestContact[]) {
@@ -9,27 +13,36 @@ export function sortDigestContacts(contacts: DigestContact[]) {
 }
 
 /**
- * Developer-owned email copy. Names and days overdue only — no notes,
- * birthdays, or relationship text.
+ * Developer-owned email copy. Names, why they are due, an optional nudge,
+ * and a group heading when the person belongs to one. No general notes.
  */
 export function formatDigestEmail(
   contacts: DigestContact[],
   reachOutUrls: Record<string, string>,
+  snoozeUrls: Record<string, string> = {},
 ) {
   const ordered = sortDigestContacts(contacts)
+  const sections = sectionsUnderGroupHeadings(ordered, (contact) => contact.group_name ?? null)
   const count = ordered.length
   const people = count === 1 ? '1 person is' : `${count} people are`
 
   const subject = 'Your weekly relationship check-in'
 
-  const lines = ordered.map((contact) => {
-    const overdue =
-      contact.days_overdue === 0 ? 'due today' : `${contact.days_overdue} days overdue`
-    return `${contact.name} — ${overdue}`
-  })
+  const lines: string[] = []
+  for (const section of sections) {
+    if (section.heading) {
+      if (lines.length > 0) lines.push('')
+      lines.push(section.heading)
+    }
+    for (const contact of section.items) lines.push(personLine(contact))
+  }
 
   const textLinks = ordered
-    .map((contact) => `Mark ${contact.name} as reached out: ${reachOutUrls[contact.id]}`)
+    .map((contact) => {
+      const reach = `Mark ${contact.name} as reached out: ${reachOutUrls[contact.id]}`
+      const snooze = snoozeUrls[contact.id]
+      return snooze ? `${reach}\nNot this week: ${snooze}` : reach
+    })
     .join('\n')
 
   const text = [
@@ -42,12 +55,11 @@ export function formatDigestEmail(
     textLinks,
   ].join('\n')
 
-  const htmlItems = ordered
-    .map((contact) => {
-      const overdue =
-        contact.days_overdue === 0 ? 'due today' : `${contact.days_overdue} days overdue`
-      const url = reachOutUrls[contact.id]
-      return `<li>${escapeHtml(contact.name)} — ${overdue}<br /><a href="${escapeHtml(url)}">Mark ${escapeHtml(contact.name)} as reached out</a></li>`
+  const htmlSections = sections
+    .map((section) => {
+      const items = section.items.map((contact) => personHtml(contact, reachOutUrls, snoozeUrls)).join('')
+      const heading = section.heading ? `<p>${escapeHtml(section.heading)}</p>` : ''
+      return `${heading}<ul>${items}</ul>`
     })
     .join('')
 
@@ -56,11 +68,36 @@ export function formatDigestEmail(
 <body>
   <p>Your weekly relationship check-in</p>
   <p>${people} overdue:</p>
-  <ul>${htmlItems}</ul>
+  ${htmlSections}
 </body>
 </html>`
 
   return { subject, text, html }
+}
+
+function personLine(contact: DigestContact) {
+  const overdue = contact.days_overdue === 0 ? 'due today' : `${contact.days_overdue} days overdue`
+  const nudge = nudgeLine(contact)
+  return nudge ? `${contact.name} — ${overdue}\n${nudge}` : `${contact.name} — ${overdue}`
+}
+
+function personHtml(
+  contact: DigestContact,
+  reachOutUrls: Record<string, string>,
+  snoozeUrls: Record<string, string>,
+) {
+  const overdue = contact.days_overdue === 0 ? 'due today' : `${contact.days_overdue} days overdue`
+  const url = reachOutUrls[contact.id]
+  const nudge = nudgeLine(contact)
+  const nudgeHtml = nudge ? `<br />${escapeHtml(nudge)}` : ''
+  const snooze = snoozeUrls[contact.id]
+  const snoozeHtml = snooze ? ` · <a href="${escapeHtml(snooze)}">Not this week</a>` : ''
+  return `<li>${escapeHtml(contact.name)} — ${overdue}${nudgeHtml}<br /><a href="${escapeHtml(url)}">Mark ${escapeHtml(contact.name)} as reached out</a>${snoozeHtml}</li>`
+}
+
+function nudgeLine(contact: DigestContact) {
+  const nudge = contact.nudge?.trim() ?? ''
+  return nudge
 }
 
 function escapeHtml(value: string) {

@@ -1,0 +1,12 @@
+{
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/mcp",
+      "destination": "https://qldlscfvkhzuzhjdzybv.supabase.co/functions/v1/mcp"
+    },
+    { "source": "/(.*)", "destination": "/index.html" }
+  ]
+}

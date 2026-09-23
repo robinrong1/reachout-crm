@@ -1,31 +1,30 @@
+import { useNavigate } from 'react-router'
 import { ContactForm } from '../components/ContactForm'
 import { createContact } from '../lib/contacts'
 
-type NewContactProps = {
-  onCancel: () => void
-  onCreated: (id: string) => void
-}
+export function NewContact() {
+  const navigate = useNavigate()
 
-export function NewContact({ onCancel, onCreated }: NewContactProps) {
   return (
-    <section className="flex flex-col gap-4">
-      <div className="flex items-center justify-between gap-3">
-        <h2 className="m-0 text-xl font-medium text-[var(--text-h)]">New contact</h2>
-        <button
-          type="button"
-          className="rounded-md border border-[var(--border)] px-3 py-1.5 text-sm"
-          onClick={onCancel}
-        >
+    <section className="page-shell form-shell" aria-labelledby="new-person-heading">
+      <header className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+        <div className="masthead">
+          <p className="masthead-eyebrow">New person</p>
+          <h2 id="new-person-heading" className="masthead-title">
+            Add someone
+          </h2>
+        </div>
+        <button type="button" className="text-link self-start" onClick={() => navigate('/contacts')}>
           Back
         </button>
-      </div>
+      </header>
       <ContactForm
-        submitLabel="Add contact"
+        submitLabel="Add them"
         onSubmit={async (input) => {
           const { data, error } = await createContact(input)
           if (error) throw error
-          if (!data) throw new Error('Contact was not created')
-          onCreated(data.id)
+          if (!data) throw new Error('They were not added')
+          navigate(`/contacts/${data.id}`)
         }}
       />
     </section>
