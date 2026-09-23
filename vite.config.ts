@@ -4,6 +4,34 @@ import { loadEnv, type Plugin } from 'vite'
 import { defineConfig } from 'vitest/config'
 import { resolveBuildOrigin } from './src/lib/mcpOauth.ts'
 
+/** Static pages. Vercel rewrites these; the dev server does the same. */
+function legalPages(): Plugin {
+  const pages: Record<string, string> = {
+    '/privacy': '/privacy.html',
+    '/terms': '/terms.html',
+  }
+
+  function rewrite(req: { url?: string }, _res: unknown, next: () => void) {
+    const path = req.url?.split('?')[0]
+    const target = path ? pages[path] : undefined
+    if (target && req.url) {
+      const query = req.url.includes('?') ? req.url.slice(req.url.indexOf('?')) : ''
+      req.url = `${target}${query}`
+    }
+    next()
+  }
+
+  return {
+    name: 'reach-legal-pages',
+    configureServer(server) {
+      server.middlewares.use(rewrite)
+    },
+    configurePreviewServer(server) {
+      server.middlewares.use(rewrite)
+    },
+  }
+}
+
 /** Same documents as src/lib/mcpOauth.ts. Served here so clients can discover login on this site. */
 function oauthDiscovery(supabaseUrl: string): Plugin {
   const functionUrl = `${supabaseUrl.replace(/\/$/, '')}/functions/v1/mcp`
@@ -68,7 +96,7 @@ export default defineConfig(({ mode }) => {
   const supabaseUrl = env.VITE_SUPABASE_URL ?? ''
 
   return {
-    plugins: [oauthDiscovery(supabaseUrl), react(), tailwindcss()],
+    plugins: [legalPages(), oauthDiscovery(supabaseUrl), react(), tailwindcss()],
     server: supabaseUrl
       ? {
           proxy: {

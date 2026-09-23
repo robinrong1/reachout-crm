@@ -23,6 +23,9 @@ export function Auth() {
         <a className="text-link" href="/terms">
           Terms
         </a>
+        <a className="text-link" href="mailto:robinyrong@gmail.com">
+          Contact
+        </a>
       </p>
     </main>
   )
