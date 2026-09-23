@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router'
+import { BrowserRouter, matchPath, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router'
 import type { Session } from '@supabase/supabase-js'
 import { BrandHeading, BrandMark } from './components/BrandMark'
 import { ErrorBanner } from './components/ErrorBanner'
@@ -18,9 +18,30 @@ import { McpAuthorize } from './pages/McpAuthorize'
 import { GmailReview } from './pages/GmailReview'
 import { Home } from './pages/Home'
 import { NewContact } from './pages/NewContact'
+import { NotFound } from './pages/NotFound'
 import { Settings } from './pages/Settings'
 import { Timeline } from './pages/Timeline'
 import { Welcome, welcomeWasSkipped } from './pages/Welcome'
+
+// Must list every path in <Routes> below; signed-out visitors never reach the router.
+const APP_PATHS = [
+  '/',
+  '/home',
+  '/welcome',
+  '/settings',
+  '/oauth/authorize',
+  '/import/gmail/callback',
+  '/import/gmail',
+  '/keep-in-touch',
+  '/contacts',
+  '/contacts/new',
+  '/contacts/:id',
+  '/timeline',
+]
+
+function isKnownPath(pathname: string) {
+  return APP_PATHS.some((path) => matchPath(path, pathname))
+}
 
 function navCurrent(pathname: string) {
   if (pathname.startsWith('/settings') || pathname.startsWith('/import')) return 'settings' as const
@@ -173,6 +194,10 @@ function App() {
     }
   }, [session])
 
+  if (!isKnownPath(window.location.pathname)) {
+    return <NotFound />
+  }
+
   if (!isSupabaseConfigured) {
     return (
       <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center px-4 py-12">
@@ -239,8 +264,8 @@ function App() {
           <Route path="/contacts/new" element={<NewContact />} />
           <Route path="/contacts/:id" element={<ContactDetail />} />
           <Route path="/timeline" element={<Timeline />} />
-          <Route path="*" element={<Navigate to="/" replace />} />
         </Route>
+        <Route path="*" element={<NotFound />} />
       </Routes>
     </BrowserRouter>
   )
