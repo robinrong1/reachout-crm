@@ -1,4 +1,5 @@
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router'
+import { BrandMark } from './BrandMark'
 
 type TopBarProps = {
   compact?: boolean
@@ -21,6 +22,9 @@ export function TopBar({ compact = false }: TopBarProps) {
 
   return (
     <header className="topbar">
+      <Link to="/" className="shrink-0 md:hidden" aria-label="Home">
+        <BrandMark />
+      </Link>
       <form
         className="topbar-search"
         onSubmit={(event) => {

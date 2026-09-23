@@ -1,4 +1,5 @@
 import { NavLink } from 'react-router'
+import { BrandMark } from './BrandMark'
 
 type SidebarProps = {
   current: 'home' | 'keep-in-touch' | 'contacts' | 'timeline' | 'settings'
@@ -10,9 +11,7 @@ export function Sidebar({ current, email, onSignOut }: SidebarProps) {
   return (
     <aside className="app-sidebar">
       <div className="mb-8 flex items-center gap-2.5 px-2">
-        <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent)] text-sm font-semibold text-white">
-          R
-        </span>
+        <BrandMark />
         <div>
           <p className="font-[family-name:var(--heading)] text-lg leading-none text-[var(--text-h)]">Reach</p>
           <p className="mt-1 text-xs text-[var(--text)]">Stay close to people</p>

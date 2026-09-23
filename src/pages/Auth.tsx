@@ -1,4 +1,5 @@
 import { useState, type FormEvent } from 'react'
+import { BrandHeading, BrandMark } from '../components/BrandMark'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { supabase } from '../lib/supabase'
 
@@ -19,19 +20,11 @@ export function Auth() {
   )
 }
 
-function Mark() {
-  return (
-    <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl bg-[var(--accent)] text-sm font-semibold text-white">
-      R
-    </span>
-  )
-}
-
 function Landing({ onMagic, onPassword }: { onMagic: () => void; onPassword: () => void }) {
   return (
     <div className="landing">
       <header className="landing-brand">
-        <Mark />
+        <BrandMark />
         <p className="font-[family-name:var(--heading)] text-xl text-[var(--text-h)]">Reach</p>
       </header>
       <div className="landing-copy">
@@ -98,6 +91,7 @@ function MagicLink({ onBack, onPassword }: { onBack: () => void; onPassword: () 
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col justify-center px-6 py-12">
+      <BrandHeading />
       <header className="masthead mb-8">
         <p className="masthead-eyebrow">Sign in</p>
         <h1 className="masthead-title">Email me a link</h1>
@@ -184,6 +178,7 @@ function PasswordAuth({
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col justify-center px-6 py-12">
+      <BrandHeading />
       <header className="masthead mb-8">
         <p className="masthead-eyebrow">{isSignUp ? 'New space' : 'Password'}</p>
         <h1 className="masthead-title">{isSignUp ? 'Create your space' : 'Sign in with a password'}</h1>
@@ -276,6 +271,7 @@ function RequestReset({ onBack }: { onBack: () => void }) {
 
   return (
     <div className="mx-auto flex w-full max-w-md flex-col justify-center px-6 py-12">
+      <BrandHeading />
       <header className="masthead mb-8">
         <p className="masthead-eyebrow">Password</p>
         <h1 className="masthead-title">Reset your password</h1>
@@ -333,6 +329,7 @@ export function ResetPassword({ onComplete }: { onComplete: () => void }) {
   return (
     <main className="auth-page">
       <div className="mx-auto flex w-full max-w-md flex-col justify-center px-6 py-12">
+        <BrandHeading />
         <header className="masthead mb-8">
           <p className="masthead-eyebrow">Password</p>
           <h1 className="masthead-title">Choose a new password</h1>

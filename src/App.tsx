@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router'
 import type { Session } from '@supabase/supabase-js'
+import { BrandHeading, BrandMark } from './components/BrandMark'
 import { ErrorBanner } from './components/ErrorBanner'
 import { NavSnackbar } from './components/NavSnackbar'
 import { Sidebar } from './components/Sidebar'
@@ -175,7 +176,7 @@ function App() {
   if (!isSupabaseConfigured) {
     return (
       <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center px-4 py-12">
-        <h1 className="page-title">Reach</h1>
+        <BrandHeading />
         <ErrorBanner message="Missing VITE_SUPABASE_URL or VITE_SUPABASE_ANON_KEY. Copy .env.example to .env.local and restart the dev server." />
       </main>
     )
@@ -183,7 +184,8 @@ function App() {
 
   if (loading) {
     return (
-      <main className="flex min-h-svh items-center justify-center px-4" aria-busy="true">
+      <main className="flex min-h-svh flex-col items-center justify-center gap-3 px-4" aria-busy="true">
+        <BrandMark className="h-12 w-12" label="Reach" />
         <p role="status">Loading…</p>
       </main>
     )
@@ -192,7 +194,7 @@ function App() {
   if (sessionError && !session) {
     return (
       <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center px-4 py-12">
-        <h1 className="page-title">Reach</h1>
+        <BrandHeading />
         <ErrorBanner
           message={sessionError}
           onRetry={() => {
