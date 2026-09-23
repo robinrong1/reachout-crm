@@ -2,10 +2,20 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
+  "headers": [
+    {
+      "source": "/.well-known/(.*)",
+      "headers": [{ "key": "Content-Type", "value": "application/json" }]
+    }
+  ],
   "rewrites": [
     {
       "source": "/mcp",
       "destination": "https://qldlscfvkhzuzhjdzybv.supabase.co/functions/v1/mcp"
+    },
+    {
+      "source": "/.well-known/oauth-protected-resource",
+      "destination": "/.well-known/oauth-protected-resource/mcp"
     },
     { "source": "/(.*)", "destination": "/index.html" }
   ]

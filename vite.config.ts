@@ -55,7 +55,8 @@ function oauthDiscovery(supabaseUrl: string): Plugin {
       const asDocument = JSON.stringify(asMetadata(origin))
       const resourceDocument = JSON.stringify(resourceMetadata(origin))
       this.emitFile({ type: 'asset', fileName: '.well-known/oauth-authorization-server', source: asDocument })
-      this.emitFile({ type: 'asset', fileName: '.well-known/oauth-protected-resource', source: resourceDocument })
+      // The unsuffixed URL is the same document. A second file at that path would
+      // make this path a file and a directory, which the build cannot write.
       this.emitFile({ type: 'asset', fileName: '.well-known/oauth-protected-resource/mcp', source: resourceDocument })
     },
   }
