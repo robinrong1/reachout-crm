@@ -16,6 +16,14 @@ export function Auth() {
         <PasswordAuth onBack={() => setView('landing')} onMagic={() => setView('magic')} onReset={() => setView('reset')} />
       ) : null}
       {view === 'reset' ? <RequestReset onBack={() => setView('password')} /> : null}
+      <p className="flex justify-center gap-4 px-6 pb-8 text-sm">
+        <a className="text-link" href="/privacy">
+          Privacy
+        </a>
+        <a className="text-link" href="/terms">
+          Terms
+        </a>
+      </p>
     </main>
   )
 }

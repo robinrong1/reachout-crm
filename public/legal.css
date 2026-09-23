@@ -1,0 +1,86 @@
+:root {
+  --text: #6f6a63;
+  --text-h: #1c1916;
+  --border: #e7e1d8;
+  --accent: #6d5cff;
+  --paper: #fffcf8;
+  --heading: "Iowan Old Style", Palatino, "Palatino Linotype", Georgia, serif;
+  color-scheme: light dark;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --text: #b3ada4;
+    --text-h: #f6f1ea;
+    --border: #3a342c;
+    --accent: #9b8cff;
+    --paper: #161411;
+  }
+}
+
+body {
+  margin: 0;
+  background: var(--paper);
+  color: var(--text);
+  font: 16px/160% "Segoe UI", system-ui, sans-serif;
+}
+
+main {
+  max-width: 42rem;
+  margin: 0 auto;
+  padding: 3rem 1.5rem 4rem;
+}
+
+h1,
+h2 {
+  font-family: var(--heading);
+  font-weight: normal;
+  color: var(--text-h);
+}
+
+h1 {
+  margin: 0.25rem 0 0;
+  font-size: 2.5rem;
+  line-height: 1.1;
+}
+
+h2 {
+  margin: 2.25rem 0 0.5rem;
+  font-size: 1.5rem;
+}
+
+a {
+  color: var(--accent);
+}
+
+code {
+  font-size: 0.875em;
+  overflow-wrap: anywhere;
+}
+
+li + li {
+  margin-top: 0.35rem;
+}
+
+.eyebrow {
+  margin: 0;
+  font-size: 0.875rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.eyebrow a {
+  color: var(--text);
+  text-decoration: none;
+}
+
+.updated {
+  margin-top: 0.5rem;
+  font-size: 0.875rem;
+}
+
+.footer {
+  margin-top: 3rem;
+  padding-top: 1.5rem;
+  border-top: 1px solid var(--border);
+}

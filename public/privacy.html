@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png" />
+    <title>Privacy Policy · Reach</title>
+    <link rel="stylesheet" href="/legal.css" />
+  </head>
+  <body>
+    <main>
+      <p class="eyebrow"><a href="/">Reach</a></p>
+      <h1>Privacy Policy</h1>
+      <p class="updated">Last updated September 23, 2026</p>
+
+      <p>
+        Reach (<a href="https://reach-outs.app">reach-outs.app</a>) helps you keep in touch with the people you care
+        about. This page explains what Reach stores, why, and how to remove it.
+      </p>
+
+      <h2>What Reach stores</h2>
+      <ul>
+        <li><strong>Your account:</strong> your email address, time zone, and which day you want the weekly email.</li>
+        <li>
+          <strong>What you enter:</strong> contacts (name, relationship, how often to reach out, birthday, phone,
+          email, notes, and an optional reminder line), groups, and the conversations you log.
+        </li>
+        <li><strong>Reminder history:</strong> when a reminder email was sent, so you do not get the same one twice.</li>
+        <li>
+          <strong>Connections you turn on:</strong> an encrypted Google refresh token if you connect Gmail, and hashed
+          access tokens if you connect an AI assistant.
+        </li>
+      </ul>
+
+      <h2>Gmail</h2>
+      <p>
+        Connecting Gmail is optional. Reach asks for the
+        <code>https://www.googleapis.com/auth/gmail.metadata</code> permission, which gives access to message headers
+        and labels only. Google does not let this permission read message bodies or attachments.
+      </p>
+      <p>
+        When you open the Gmail review page, Reach reads the From, To, Cc, Date, and List-Unsubscribe headers of your
+        200 most recent inbox messages and 200 most recent sent messages. It uses them to suggest people you actually
+        write back and forth with, and to skip mailing lists. These headers are passed to your browser to build the
+        list. Reach does not save them. A person becomes a contact only when you choose Accept. That saves their name
+        and email address, marked as coming from Gmail.
+      </p>
+      <p>
+        Reach stores the Google refresh token encrypted. It is never sent to your browser. Disconnect in Settings
+        deletes it. You can also remove Reach at any time from
+        <a href="https://myaccount.google.com/permissions">your Google Account permissions</a>.
+      </p>
+
+      <h2>Limited Use</h2>
+      <p>
+        Reach's use and transfer of information received from Google APIs to any other app will adhere to the
+        <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>,
+        including the Limited Use requirements. In particular, Reach:
+      </p>
+      <ul>
+        <li>uses Gmail data only to suggest contacts to you inside Reach;</li>
+        <li>does not sell it, or use it for advertising, credit decisions, or lending;</li>
+        <li>does not use it to train general artificial intelligence or machine learning models;</li>
+        <li>
+          does not let any person read it, except with your permission, when needed for security or to follow the
+          law.
+        </li>
+      </ul>
+
+      <h2>AI assistants</h2>
+      <p>
+        If you connect an assistant such as Claude, it can find, read, create, and update your contacts and log
+        conversations, only after you sign in and choose Allow. It cannot delete anything, and it has no access to
+        Gmail. You can revoke access in Settings at any time.
+      </p>
+
+      <h2>Services that handle your data</h2>
+      <ul>
+        <li><strong>Supabase:</strong> hosts the database, sign-in and sign-in emails, and server functions.</li>
+        <li><strong>Vercel:</strong> hosts the website.</li>
+        <li><strong>Resend:</strong> sends reminder emails to your address.</li>
+        <li><strong>Google:</strong> provides Gmail access, only if you connect it.</li>
+      </ul>
+      <p>Reach does not sell your data, show ads, or use tracking cookies.</p>
+
+      <h2>Security</h2>
+      <p>
+        Traffic is encrypted with HTTPS. Database rules let each account read only its own rows. The Google refresh
+        token is encrypted, and assistant tokens are stored only as hashes.
+      </p>
+
+      <h2>Keeping and deleting your data</h2>
+      <p>
+        Your data stays until you delete it. You can delete contacts in the app, and disconnect Gmail or an assistant
+        in Settings. To delete your whole account and everything in it, email
+        <a href="mailto:r0bberve3r@gmail.com">r0bberve3r@gmail.com</a> from your account address. It will be removed
+        within 30 days.
+      </p>
+
+      <h2>Changes</h2>
+      <p>If this policy changes, the date at the top will change.</p>
+
+      <h2>Contact</h2>
+      <p><a href="mailto:r0bberve3r@gmail.com">r0bberve3r@gmail.com</a></p>
+
+      <p class="footer"><a href="/terms">Terms of Service</a></p>
+    </main>
+  </body>
+</html>
