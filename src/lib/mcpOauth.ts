@@ -36,6 +36,31 @@ export function resolvePublicOrigin(appOrigin: string | null | undefined, forwar
   return configured || null
 }
 
+/**
+ * Origin baked into static OAuth discovery on Vercel.
+ * Prefer the project production domain over a stale *.vercel.app APP_ORIGIN.
+ */
+export function resolveBuildOrigin(
+  appOrigin: string | null | undefined,
+  vercelProductionUrl: string | null | undefined,
+) {
+  const configured = appOrigin?.trim().replace(/\/$/, '') ?? ''
+  const raw = vercelProductionUrl?.trim().replace(/\/$/, '') ?? ''
+  const production = raw ? (raw.startsWith('http') ? raw : `https://${raw}`) : ''
+
+  let configuredIsVercelApp = false
+  if (configured) {
+    try {
+      configuredIsVercelApp = /\.vercel\.app$/i.test(new URL(configured).hostname)
+    } catch {
+      configuredIsVercelApp = false
+    }
+  }
+
+  if (production && (!configured || configuredIsVercelApp)) return production
+  return configured || production || null
+}
+
 export function acceptedResources(publicOrigin: string | null, functionUrl: string) {
   const urls = [functionUrl.replace(/\/$/, '')]
   if (publicOrigin) urls.push(`${publicOrigin}/mcp`)

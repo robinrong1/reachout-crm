@@ -2,6 +2,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { loadEnv, type Plugin } from 'vite'
 import { defineConfig } from 'vitest/config'
+import { resolveBuildOrigin } from './src/lib/mcpOauth.ts'
 
 /** Same documents as src/lib/mcpOauth.ts. Served here so clients can discover login on this site. */
 function oauthDiscovery(supabaseUrl: string): Plugin {
@@ -50,7 +51,7 @@ function oauthDiscovery(supabaseUrl: string): Plugin {
       })
     },
     generateBundle() {
-      const origin = (process.env.APP_ORIGIN || '').trim().replace(/\/$/, '')
+      const origin = resolveBuildOrigin(process.env.APP_ORIGIN, process.env.VERCEL_PROJECT_PRODUCTION_URL)
       if (!origin || !supabaseUrl) return
       const asDocument = JSON.stringify(asMetadata(origin))
       const resourceDocument = JSON.stringify(resourceMetadata(origin))

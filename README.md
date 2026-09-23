@@ -63,7 +63,7 @@ Secrets:
 - `GOOGLE_CLIENT_ID`
 - `GOOGLE_CLIENT_SECRET`
 - `GMAIL_TOKEN_KEY` — long random string. Encrypts the refresh token and signs the OAuth state. The raw refresh token is never stored or sent to the browser.
-- `APP_ORIGIN` — production site origin, for example `https://reach.example`. Localhost redirects are allowed without this.
+- `APP_ORIGIN` — production site origin, for example `https://reach-outs.app`. Do not use a `*.vercel.app` URL once a custom domain is live. Localhost redirects are allowed without this.
 
 In Google Cloud, create a Web OAuth client with scope `https://www.googleapis.com/auth/gmail.metadata` and these redirect URIs:
 
@@ -82,7 +82,13 @@ Secret:
 
 Apply `schema.sql` (`mcp_tokens`, plus the `mcp_oauth_*` tables for browser sign-in) and deploy `mcp`. Set `APP_ORIGIN` to the site origin the browser should open, including `http://localhost:<port>` while developing.
 
-Browser sign-in: point the client at `http://localhost:<port>/mcp` (or `https://<your-host>/mcp` in production). The first connection opens Reach. Sign in, then allow the app. Add that site URL to Supabase Auth redirect URLs so a magic link can return to `/oauth/authorize`.
+Production checklist when the custom domain is live:
+
+1. Vercel → Environment Variables → `APP_ORIGIN=https://reach-outs.app` (Production), then redeploy.
+2. Supabase → Edge Function secrets → same `APP_ORIGIN` (`npx supabase secrets set APP_ORIGIN=https://reach-outs.app`).
+3. Supabase → Authentication → URL Configuration → Site URL `https://reach-outs.app`, and Redirect URLs that include `https://reach-outs.app/**` (and `http://localhost:<port>/**` for local).
+
+Browser sign-in: point the client at `http://localhost:<port>/mcp` (or `https://reach-outs.app/mcp` in production). The first connection opens Reach. Sign in, then allow the app.
 
 API key: in Settings → Assistant, create a token (shown once) and point the client at `https://<project>.supabase.co/functions/v1/mcp` with `Authorization: Bearer <token>`. The gateway also accepts the anon key as `apikey`.
 

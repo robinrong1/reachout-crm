@@ -5,6 +5,7 @@ import {
   oauthAction,
   pkceMatches,
   pkceS256,
+  resolveBuildOrigin,
   resolvePublicOrigin,
   resourceMatches,
   validateRegistration,
@@ -28,6 +29,14 @@ describe('public origin', () => {
     expect(resolvePublicOrigin('https://reach.example', 'http://localhost:5177')).toBe('http://localhost:5177')
     expect(resolvePublicOrigin('https://reach.example', 'https://evil.example')).toBe('https://reach.example')
     expect(resolvePublicOrigin('', null)).toBeNull()
+  })
+
+  it('prefers the Vercel production domain over a stale *.vercel.app APP_ORIGIN', () => {
+    expect(resolveBuildOrigin('https://reach-gules.vercel.app', 'reach-outs.app')).toBe('https://reach-outs.app')
+    expect(resolveBuildOrigin('https://reach-outs.app', 'reach-outs.app')).toBe('https://reach-outs.app')
+    expect(resolveBuildOrigin('https://reach-outs.app', null)).toBe('https://reach-outs.app')
+    expect(resolveBuildOrigin(null, 'reach-outs.app')).toBe('https://reach-outs.app')
+    expect(resolveBuildOrigin(null, null)).toBeNull()
   })
 })
 
