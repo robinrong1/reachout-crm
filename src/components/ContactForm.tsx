@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { CADENCE_PRESETS, DEFAULT_CADENCE_DAYS, cadencePresetForDays } from '../lib/cadence'
 import { validateContactEmail } from '../lib/contactFields'
 import type { Contact, ContactInsert } from '../types/database'
+import { localToday } from '../utils/dates'
 
 type ContactFormProps = {
   initial?: Contact
@@ -171,6 +172,7 @@ export function ContactForm({ initial, submitLabel, onSubmit }: ContactFormProps
         <input
           type="date"
           name="birthday"
+          max={localToday()}
           value={birthday}
           onChange={(event) => setBirthday(event.target.value)}
           className="input-field"

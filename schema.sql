@@ -86,7 +86,10 @@ FROM (
         c.nudge,
         c.snoozed_until,
         (now() AT TIME ZONE COALESCE(u.timezone, 'UTC'))::date AS today,
-        MAX(i.occurred_on) AS last_contact_date
+        -- Future-dated rows must not push next_due_date out and hide the person.
+        MAX(i.occurred_on) FILTER (
+            WHERE i.occurred_on <= (now() AT TIME ZONE COALESCE(u.timezone, 'UTC'))::date
+        ) AS last_contact_date
     FROM contacts c
     JOIN users u ON u.id = c.user_id
     LEFT JOIN interactions i ON i.contact_id = c.id

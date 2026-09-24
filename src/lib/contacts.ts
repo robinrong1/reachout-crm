@@ -1,9 +1,8 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from './supabase.ts'
 import type { Contact, ContactInsert, ContactUpdate, Database } from '../types/database.ts'
-import { validateCadenceDays } from './cadence.ts'
-import { addDays } from '../utils/dates.ts'
-import { normalizeNudge, validateContactEmail, validateContactName } from './contactFields.ts'
+import { addDays, localToday } from '../utils/dates.ts'
+import { combinedError, contactInputErrors, normalizeNudge } from './contactFields.ts'
 import { isMissingGroupsSchema } from './groups.ts'
 
 export type Db = SupabaseClient<Database>
@@ -68,8 +67,10 @@ export async function listContacts(archived: boolean) {
     }
   }
 
+  const today = localToday()
   const latest = new Map<string, string>()
   for (const row of interactions ?? []) {
+    if (row.occurred_on > today) continue
     const current = latest.get(row.contact_id)
     if (!current || row.occurred_on > current) latest.set(row.contact_id, row.occurred_on)
   }
@@ -140,17 +141,16 @@ export async function getContact(id: string, db: Db = supabase) {
  * Pass `userId` when `db` is an accessToken client (the MCP server): those clients
  * throw on any `db.auth` access. RLS still requires it to match the JWT subject.
  */
-export async function createContact(input: ContactInsert, db: Db = supabase, userId?: string) {
-  const nameError = validateContactName(input.name)
-  if (nameError) return { data: null, error: nameError }
-  const cadenceError = validateCadenceDays(input.cadence_days)
-  if (cadenceError) return { data: null, error: cadenceError }
-  const emailError = validateContactEmail(input.email)
-  if (emailError) return { data: null, error: emailError }
+export async function createContact(
+  input: ContactInsert,
+  db: Db = supabase,
+  options: { userId?: string; today?: string } = {},
+) {
+  const invalid = combinedError(contactInputErrors(input, { requireName: true, today: options.today ?? localToday() }))
+  if (invalid) return { data: null, error: invalid }
   const nudge = normalizeNudge(input.nudge)
-  if (nudge.error) return { data: null, error: nudge.error }
 
-  const owner = userId ? { userId, error: null } : await requireUserId(db)
+  const owner = options.userId ? { userId: options.userId, error: null } : await requireUserId(db)
   if (owner.error || !owner.userId) return { data: null, error: owner.error }
 
   const row: Database['public']['Tables']['contacts']['Insert'] = {
@@ -171,22 +171,10 @@ export async function createContact(input: ContactInsert, db: Db = supabase, use
   return { data: (data ?? null) as Contact | null, error }
 }
 
-export async function updateContact(id: string, input: ContactUpdate, db: Db = supabase) {
-  if (input.name != null) {
-    const nameError = validateContactName(input.name)
-    if (nameError) return { data: null, error: nameError }
-  }
-  const cadenceError = validateCadenceDays(input.cadence_days)
-  if (cadenceError) return { data: null, error: cadenceError }
-  if ('email' in input) {
-    const emailError = validateContactEmail(input.email)
-    if (emailError) return { data: null, error: emailError }
-  }
-  if ('nudge' in input) {
-    const nudge = normalizeNudge(input.nudge)
-    if (nudge.error) return { data: null, error: nudge.error }
-    input = { ...input, nudge: nudge.value }
-  }
+export async function updateContact(id: string, input: ContactUpdate, db: Db = supabase, today = localToday()) {
+  const invalid = combinedError(contactInputErrors(input, { requireName: false, today }))
+  if (invalid) return { data: null, error: invalid }
+  if ('nudge' in input) input = { ...input, nudge: normalizeNudge(input.nudge).value }
 
   const patch: ContactUpdate = { ...input }
   if (input.name != null) patch.name = input.name.trim()

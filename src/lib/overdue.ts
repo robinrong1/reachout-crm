@@ -61,29 +61,41 @@ export function computeRelationshipState(input: {
   }
 }
 
+/** Future-dated rows (logged before that was rejected) must not push next_due_date out. */
+export function latestPastOccurredOn(interactions: Pick<Interaction, 'occurred_on'>[], today: string) {
+  let latest: string | null = null
+  for (const item of interactions) {
+    if (item.occurred_on <= today && (latest == null || item.occurred_on > latest)) latest = item.occurred_on
+  }
+  return latest
+}
+
 export function relationshipStateForContact(
   contact: Contact,
   interactions: Interaction[],
   timeZone: string,
   now = new Date(),
 ) {
-  const latestOccurredOn =
-    interactions.length === 0
-      ? null
-      : interactions.reduce((latest, item) => (item.occurred_on > latest ? item.occurred_on : latest), interactions[0].occurred_on)
+  const today = todayInTimeZone(timeZone, now)
+  const latestOccurredOn = latestPastOccurredOn(interactions, today)
 
   return computeRelationshipState({
-    today: todayInTimeZone(timeZone, now),
+    today,
     cadenceDays: contact.cadence_days,
     latestOccurredOn,
   })
 }
+
+export { compareOverdue } from './overdueSort.ts'
 
 export async function listOverdueContacts(db: typeof supabase = supabase) {
   const { data, error } = await db
     .from('overdue_contacts')
     .select('*')
     .order('days_overdue', { ascending: false })
+    .order('last_contact_date', { ascending: false, nullsFirst: false })
+    .order('name', { ascending: true })
+    .order('id', { ascending: true })
 
   return { data: (data ?? null) as OverdueContact[] | null, error }
 }

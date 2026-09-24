@@ -26,6 +26,7 @@ type OverdueRow = {
   id: string
   name: string
   days_overdue: number
+  last_contact_date: string | null
   nudge: string | null
 }
 
@@ -93,7 +94,7 @@ Deno.serve(async (req) => {
 
       const { data: overdue, error: overdueError } = await supabase
         .from('overdue_contacts')
-        .select('id, name, days_overdue, nudge')
+        .select('id, name, days_overdue, last_contact_date, nudge')
         .eq('user_id', user.id)
         .order('days_overdue', { ascending: false })
 

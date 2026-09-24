@@ -1,6 +1,6 @@
 import type { ContactListItem } from './contacts'
 import { daysUntilBirthday, nextBirthdayOn } from './birthdays'
-import { computeRelationshipState, isHiddenBySnooze, type OverdueContact } from './overdue'
+import { compareOverdue, computeRelationshipState, isHiddenBySnooze, type OverdueContact } from './overdue'
 
 /** Today plus the next 6 days — a 7-day glance, not a dedicated birthdays page. */
 export const HOME_LOOKAHEAD_DAYS = 7
@@ -34,7 +34,7 @@ export function buildCatchUp(
 ): CatchUpItem[] {
   const overdueItems: CatchUpItem[] = [...overdue]
     .filter((contact) => !isHiddenBySnooze(today, contact.snoozed_until))
-    .sort((a, b) => b.days_overdue - a.days_overdue)
+    .sort(compareOverdue)
     .map((contact) => ({
       id: contact.id,
       name: contact.name,

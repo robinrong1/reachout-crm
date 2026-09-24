@@ -4,7 +4,7 @@ import { CadenceField } from '../components/ContactForm'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { DEFAULT_CADENCE_DAYS } from '../lib/cadence'
 import { createContact } from '../lib/contacts'
-import { createInteraction } from '../lib/interactions'
+import { createInteraction, localToday } from '../lib/interactions'
 
 const SKIP_KEY = 'reach-welcome-skipped'
 
@@ -115,6 +115,7 @@ export function Welcome() {
                 <input
                   type="date"
                   name={`last-${index}`}
+                  max={localToday()}
                   value={row.lastTalked}
                   onChange={(event) => update(index, { lastTalked: event.target.value })}
                   className="input-field"

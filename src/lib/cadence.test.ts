@@ -36,5 +36,7 @@ describe('cadence validation', () => {
     expect(validateCadenceDays(0)?.message).toMatch(/greater than 0/)
     expect(validateCadenceDays(-7)?.message).toMatch(/greater than 0/)
     expect(validateCadenceDays(1.5)?.message).toMatch(/greater than 0/)
+    expect(validateCadenceDays(3650)).toBeNull()
+    expect(validateCadenceDays(3651)?.message).toMatch(/at most 3650/)
   })
 })

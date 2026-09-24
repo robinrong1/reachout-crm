@@ -45,6 +45,7 @@ export function InteractionForm({ initial, submitLabel, onSubmit, onCancel }: In
           required
           type="date"
           name="occurred_on"
+          max={localToday()}
           value={occurredOn}
           onChange={(event) => setOccurredOn(event.target.value)}
           className="input-field"

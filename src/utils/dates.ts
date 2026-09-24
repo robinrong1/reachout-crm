@@ -47,6 +47,14 @@ export function todayInTimeZone(timeZone: string, now = new Date()) {
   return calendarDateInTimeZone(now, timeZone)
 }
 
+/** Local calendar date as YYYY-MM-DD. Avoid toISOString(); that is UTC. */
+export function localToday(now = new Date()) {
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
+
 /** Month heading for a YYYY-MM-DD date, e.g. SEP 2026. */
 export function formatMonthHeading(isoDate: string) {
   const [year, month] = isoDate.split('-').map(Number)

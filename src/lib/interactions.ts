@@ -2,6 +2,10 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from './supabase.ts'
 import type { Database, Interaction, InteractionInsert, InteractionUpdate } from '../types/database.ts'
 import { attachContactNames, type TimelineItem } from './timeline.ts'
+import { isRealIsoDate } from './contactFields.ts'
+import { localToday } from '../utils/dates.ts'
+
+export { localToday }
 
 type Db = SupabaseClient<Database>
 
@@ -11,17 +15,11 @@ function emptyToNull(value: string | null | undefined) {
   return trimmed === '' ? null : trimmed
 }
 
-/** Local calendar date as YYYY-MM-DD. Avoid toISOString(); that is UTC. */
-export function localToday() {
-  const now = new Date()
-  const year = now.getFullYear()
-  const month = String(now.getMonth() + 1).padStart(2, '0')
-  const day = String(now.getDate()).padStart(2, '0')
-  return `${year}-${month}-${day}`
-}
-
-function isIsoDate(value: string) {
-  return /^\d{4}-\d{2}-\d{2}$/.test(value)
+/** A future conversation would push next_due_date out and hide the person from overdue. */
+export function validateOccurredOn(occurredOn: string, today: string) {
+  if (!isRealIsoDate(occurredOn)) return new Error('Date must be a real date as YYYY-MM-DD')
+  if (occurredOn > today) return new Error('Date cannot be in the future')
+  return null
 }
 
 export async function listInteractions(contactId: string, db: Db = supabase) {
@@ -77,11 +75,11 @@ export async function reachedOutToday(contactId: string, note?: string | null) {
   })
 }
 
-export async function createInteraction(input: InteractionInsert, db: Db = supabase) {
-  const occurredOn = input.occurred_on?.trim() || localToday()
-  if (!isIsoDate(occurredOn)) {
-    return { data: null, error: new Error('Interaction date must be YYYY-MM-DD') }
-  }
+/** `today` is the user's local date; the MCP server passes it from the user's timezone. */
+export async function createInteraction(input: InteractionInsert, db: Db = supabase, today = localToday()) {
+  const occurredOn = input.occurred_on?.trim() || today
+  const dateError = validateOccurredOn(occurredOn, today)
+  if (dateError) return { data: null, error: dateError }
 
   const { data, error } = await db
     .from('interactions')
@@ -101,9 +99,8 @@ export async function updateInteraction(id: string, input: InteractionUpdate) {
 
   if (input.occurred_on != null) {
     const occurredOn = input.occurred_on.trim()
-    if (!isIsoDate(occurredOn)) {
-      return { data: null, error: new Error('Interaction date must be YYYY-MM-DD') }
-    }
+    const dateError = validateOccurredOn(occurredOn, localToday())
+    if (dateError) return { data: null, error: dateError }
     patch.occurred_on = occurredOn
   }
 

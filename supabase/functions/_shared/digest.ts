@@ -1,15 +1,17 @@
 import { sectionsUnderGroupHeadings } from '../../../src/lib/groupHeadings.ts'
+import { compareOverdue } from '../../../src/lib/overdueSort.ts'
 
 export type DigestContact = {
   id: string
   name: string
   days_overdue: number
+  last_contact_date?: string | null
   nudge?: string | null
   group_name?: string | null
 }
 
 export function sortDigestContacts(contacts: DigestContact[]) {
-  return [...contacts].sort((a, b) => b.days_overdue - a.days_overdue)
+  return [...contacts].sort(compareOverdue)
 }
 
 /**

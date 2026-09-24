@@ -187,6 +187,7 @@ export function Timeline() {
               required
               type="date"
               className="input-field"
+              max={localToday()}
               value={occurredOn}
               onChange={(event) => setOccurredOn(event.target.value)}
             />

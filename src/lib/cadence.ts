@@ -19,11 +19,16 @@ export function formatCadence(days: number) {
   return `every ${days} days`
 }
 
-/** Cadence is a whole number of days greater than 0 (matches the DB check). */
+export const MAX_CADENCE_DAYS = 3650
+
+/** Cadence is a whole number of days greater than 0 (matches the DB check), at most ten years. */
 export function validateCadenceDays(cadenceDays: number | undefined) {
   if (cadenceDays == null) return null
   if (!Number.isInteger(cadenceDays) || cadenceDays <= 0) {
     return new Error('Cadence must be a whole number of days greater than 0')
+  }
+  if (cadenceDays > MAX_CADENCE_DAYS) {
+    return new Error(`Cadence can be at most ${MAX_CADENCE_DAYS} days (10 years)`)
   }
   return null
 }

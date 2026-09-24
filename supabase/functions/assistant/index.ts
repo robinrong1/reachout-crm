@@ -12,9 +12,19 @@ import { callMcpTool } from '../../../src/mcp/tools.ts'
 import type { Database } from '../../../src/types/database.ts'
 import { todayInTimeZone } from '../../../src/utils/dates.ts'
 
-const DEFAULT_MODEL = 'gemini-flash-latest'
+/** Tried in order; whatever the key can reach wins. GEMINI_MODEL / GEMINI_MODELS go ahead of these. */
+const FALLBACK_MODELS = ['gemini-flash-latest', 'gemini-flash-lite-latest', 'gemini-pro-latest']
+const NOT_FOR_CHAT = /embedding|image|imagen|veo|tts|audio|live|computer-use|robotics|gemma/
 const MAX_BODY_BYTES = 400_000
 const GEMINI_TIMEOUT_MS = 30_000
+const CATALOG_TIMEOUT_MS = 10_000
+/** A minute-rate limit clears quickly; a daily one does not, so stop asking that model today. */
+const COOLDOWN_MINUTE_MS = 60_000
+const COOLDOWN_DAY_MS = 6 * 60 * 60 * 1000
+
+/** Kept per isolate so one exhausted model does not cost every later request a wasted call. */
+const cooldowns = new Map<string, number>()
+let catalog: string[] | null = null
 
 type AssistantRequest = {
   transcript?: unknown
@@ -27,21 +37,23 @@ class ModelError extends Error {
     message: string,
     readonly status = 0,
     readonly detail = '',
+    readonly model = '',
   ) {
     super(message)
   }
 }
 
 /** Says which part of the Gemini setup failed without exposing anything secret. */
-function modelErrorText(error: ModelError, model: string) {
+function modelErrorText(error: ModelError) {
   const detail = error.detail.toLowerCase()
   if (error.status === 0) return 'Could not reach Gemini. Try again shortly.'
   if (detail.includes('api key') || error.status === 401 || error.status === 403) {
     return 'Gemini rejected the API key. Check GEMINI_API_KEY in Supabase secrets.'
   }
   if (error.status === 402) return 'Gemini credits are used up for this API key. Add credits in Google AI Studio.'
-  if (error.status === 404) return `Gemini does not offer the model "${model}". Set GEMINI_MODEL to an available model.`
-  if (error.status === 429) return 'Gemini usage limit reached. Wait a minute, or check the quota for this API key.'
+  if (error.status === 429 || error.status === 404) {
+    return 'Every Gemini model this key can use is rate limited right now. Try again in a minute.'
+  }
   if (error.status === 400) return `Gemini could not read the request: ${error.detail.slice(0, 200)}`
   return `The assistant is unavailable right now (Gemini ${error.status}: ${error.detail.slice(0, 200)}). Try again shortly.`
 }
@@ -55,7 +67,6 @@ Deno.serve(async (req) => {
   const supabaseUrl = Deno.env.get('SUPABASE_URL')
   const anonKey = Deno.env.get('SUPABASE_ANON_KEY')
   const geminiKey = Deno.env.get('GEMINI_API_KEY')
-  const model = Deno.env.get('GEMINI_MODEL')?.trim() || DEFAULT_MODEL
   if (!supabaseUrl || !anonKey || !geminiKey) {
     return jsonResponse(503, { error: 'The assistant is not configured yet.' }, req)
   }
@@ -97,7 +108,7 @@ Deno.serve(async (req) => {
       transcript,
       message,
       approval,
-      callModel: (contents) => callGemini({ apiKey: geminiKey, model, systemPrompt, tools, contents }),
+      callModel: (contents) => generate({ apiKey: geminiKey, systemPrompt, tools, contents }),
       callTool: (name, args) => callMcpTool(db, userId, name, args),
     })
     console.log(
@@ -113,9 +124,15 @@ Deno.serve(async (req) => {
     const messageText = error instanceof Error ? error.message : 'Request failed'
     if (error instanceof ModelError) {
       console.error(
-        JSON.stringify({ event: 'assistant_model_failed', userId, model, status: error.status, message: messageText }),
+        JSON.stringify({
+          event: 'assistant_model_failed',
+          userId,
+          model: error.model,
+          status: error.status,
+          message: messageText,
+        }),
       )
-      return jsonResponse(502, { error: modelErrorText(error, model) }, req)
+      return jsonResponse(502, { error: modelErrorText(error) }, req)
     }
     console.error(JSON.stringify({ event: 'assistant_turn_failed', userId, message: messageText }))
     return jsonResponse(409, { error: messageText }, req)
@@ -130,6 +147,134 @@ function parseBody(raw: string): AssistantRequest | null {
   } catch {
     return null
   }
+}
+
+type GenerateInput = {
+  apiKey: string
+  systemPrompt: string
+  tools: ReturnType<typeof geminiTools>
+  contents: GeminiContent[]
+}
+
+function uniqueModels(names: string[]) {
+  return [...new Set(names.map((name) => name.trim()).filter(Boolean))]
+}
+
+function configuredModels() {
+  return uniqueModels([
+    ...(Deno.env.get('GEMINI_MODEL') ?? '').split(','),
+    ...(Deno.env.get('GEMINI_MODELS') ?? '').split(','),
+  ])
+}
+
+function modelRank(name: string) {
+  if (name.includes('flash-lite')) return 1
+  if (name.includes('flash')) return 0
+  if (name.includes('pro')) return 2
+  return 3
+}
+
+function modelVersion(name: string) {
+  const match = /(\d+(?:\.\d+)?)/.exec(name)
+  return match ? Number(match[1]) : 0
+}
+
+/** Everyday chat models first, newest first, stable before preview builds. */
+function byPreference(a: string, b: string) {
+  const preview = (name: string) => (/preview|exp\b|-exp/.test(name) ? 1 : 0)
+  return modelRank(a) - modelRank(b) || preview(a) - preview(b) || modelVersion(b) - modelVersion(a) || a.localeCompare(b)
+}
+
+/** Asks Gemini what this key can actually call, so quota fallbacks are not guesswork. */
+async function discoverModels(apiKey: string) {
+  if (catalog) return catalog
+  try {
+    const res = await fetch('https://generativelanguage.googleapis.com/v1beta/models?pageSize=200', {
+      headers: { 'x-goog-api-key': apiKey },
+      signal: AbortSignal.timeout(CATALOG_TIMEOUT_MS),
+    })
+    if (!res.ok) return []
+    const body = await res.json()
+    const names: string[] = (Array.isArray(body?.models) ? body.models : [])
+      .filter((entry: { supportedGenerationMethods?: unknown }) =>
+        Array.isArray(entry?.supportedGenerationMethods) && entry.supportedGenerationMethods.includes('generateContent'),
+      )
+      .map((entry: { name?: unknown }) => String(entry?.name ?? '').replace(/^models\//, ''))
+      .filter((name: string) => name.startsWith('gemini') && !NOT_FOR_CHAT.test(name))
+    catalog = uniqueModels(names).sort(byPreference)
+    return catalog
+  } catch {
+    return []
+  }
+}
+
+function coolDown(model: string, error: ModelError) {
+  const daily = /per day|per-day|daily|quota_?limit_?value/i.test(error.detail)
+  cooldowns.set(model, Date.now() + (error.status === 404 || daily ? COOLDOWN_DAY_MS : COOLDOWN_MINUTE_MS))
+}
+
+/** Retryable here means another model might do better: quota, missing model, or a Google-side fault. */
+function worthAnotherModel(error: ModelError) {
+  return error.status === 429 || error.status === 404 || error.status === 0 || error.status >= 500
+}
+
+async function tryModels(models: string[], input: GenerateInput) {
+  const now = Date.now()
+  const ready = models.filter((model) => (cooldowns.get(model) ?? 0) <= now)
+  let lastError: ModelError | null = null
+  for (const model of ready) {
+    try {
+      const content = await callGemini({ ...input, model })
+      console.log(JSON.stringify({ event: 'assistant_model_used', model }))
+      return { content, lastError }
+    } catch (error) {
+      if (!(error instanceof ModelError)) throw error
+      if (!worthAnotherModel(error)) throw error
+      console.warn(JSON.stringify({ event: 'assistant_model_skipped', model, status: error.status }))
+      coolDown(model, error)
+      lastError = error
+    }
+  }
+  return { content: null, lastError }
+}
+
+/** Thought signatures belong to the model that made them, so they cannot survive a fallback. */
+function withoutThoughtSignatures(contents: GeminiContent[]): GeminiContent[] {
+  return contents.map((content) => ({
+    ...content,
+    parts: content.parts.map((part) => {
+      const copy = { ...part }
+      delete copy.thoughtSignature
+      return copy
+    }),
+  }))
+}
+
+async function generate(input: GenerateInput): Promise<GeminiContent> {
+  try {
+    return await attempt(input)
+  } catch (error) {
+    if (error instanceof ModelError && error.status === 400 && /thought|signature/i.test(error.detail)) {
+      return await attempt({ ...input, contents: withoutThoughtSignatures(input.contents) })
+    }
+    throw error
+  }
+}
+
+async function attempt(input: GenerateInput): Promise<GeminiContent> {
+  const preferred = uniqueModels([...configuredModels(), ...FALLBACK_MODELS])
+  const first = await tryModels(preferred, input)
+  if (first.content) return first.content
+
+  const rest = (await discoverModels(input.apiKey)).filter((model) => !preferred.includes(model))
+  const second = await tryModels(rest, input)
+  if (second.content) return second.content
+
+  throw (
+    second.lastError ??
+    first.lastError ??
+    new ModelError('Every model is rate limited', 429, 'all models cooling down', preferred[0] ?? '')
+  )
 }
 
 async function callGemini(input: {
@@ -154,12 +299,12 @@ async function callGemini(input: {
       signal: AbortSignal.timeout(GEMINI_TIMEOUT_MS),
     })
   } catch (error) {
-    throw new ModelError(error instanceof Error ? error.message : 'Gemini request failed')
+    throw new ModelError(error instanceof Error ? error.message : 'Gemini request failed', 0, '', input.model)
   }
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
     const detail = typeof body?.error?.message === 'string' ? body.error.message : 'no details'
-    throw new ModelError(`gemini ${res.status}: ${detail}`, res.status, detail)
+    throw new ModelError(`gemini ${res.status}: ${detail}`, res.status, detail, input.model)
   }
   const content = body?.candidates?.[0]?.content
   if (!content || !Array.isArray(content.parts)) {
