@@ -1,7 +1,7 @@
 import type { Db } from '../lib/contacts.ts'
 import { createContact, findContacts, getContact, updateContact } from '../lib/contacts.ts'
 import { createInteraction, listInteractions, validateOccurredOn } from '../lib/interactions.ts'
-import { listOverdueContacts } from '../lib/overdue.ts'
+import { compareOverdue, listOverdueContacts } from '../lib/overdue.ts'
 import { contactInputErrors } from '../lib/contactFields.ts'
 import { MAX_CADENCE_DAYS } from '../lib/cadence.ts'
 import type { Contact, ContactUpdate } from '../types/database.ts'
@@ -240,8 +240,18 @@ export function mcpToolDefinitions() {
     {
       name: 'get_overdue_contacts',
       description:
-        'People the user is late to talk to, most overdue first, including anyone with no conversations yet (days_overdue 0).',
-      inputSchema: { type: 'object', properties: {}, additionalProperties: false },
+        'People the user is late to talk to, most overdue first. People with no conversations yet are due now: ' +
+        'they have never_contacted: true and days_overdue 0, and are listed after everyone actually late.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          include_never_contacted: {
+            type: 'boolean',
+            description: 'Default true. Set false to list only people who are actually late.',
+          },
+        },
+        additionalProperties: false,
+      },
     },
   ]
 }
@@ -373,9 +383,15 @@ async function runTool(db: Db, ctx: Ctx, args: Record<string, unknown>): Promise
   }
 
   if (name === 'get_overdue_contacts') {
+    if ('include_never_contacted' in args && asBoolean(args.include_never_contacted) == null) {
+      return fail('include_never_contacted must be true or false')
+    }
     const result = await listOverdueContacts(db)
     if (result.error) return failWith(ctx, result.error)
-    return ok(result.data)
+    const rows = [...(result.data ?? [])]
+      .sort(compareOverdue)
+      .map((row) => ({ ...row, never_contacted: row.last_contact_date === null }))
+    return ok(args.include_never_contacted === false ? rows.filter((row) => !row.never_contacted) : rows)
   }
 
   return fail('Unknown tool')

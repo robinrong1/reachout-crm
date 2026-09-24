@@ -68,6 +68,12 @@ export function validateContactPhone(value: string | null | undefined) {
   return null
 }
 
+/** Stored digits only (e.g. 13432023162), matching existing rows. Validate first. */
+export function normalizePhone(value: string | null | undefined) {
+  const digits = (value ?? '').replace(/\D/g, '')
+  return digits === '' ? null : digits
+}
+
 /** A real calendar date as YYYY-MM-DD (rejects 2026-02-30). */
 export function isRealIsoDate(value: string) {
   if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false

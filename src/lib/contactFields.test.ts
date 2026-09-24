@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { contactInputErrors, isRealIsoDate, normalizeNudge, validateBirthday, validateContactPhone } from './contactFields'
+import {
+  contactInputErrors,
+  isRealIsoDate,
+  normalizeNudge,
+  normalizePhone,
+  validateBirthday,
+  validateContactPhone,
+} from './contactFields'
 
 describe('normalizeNudge', () => {
   it('keeps a short line, stores blanks as null, and rejects anything over 140', () => {
@@ -21,6 +28,15 @@ describe('validateContactPhone', () => {
     for (const phone of ['abc', '555-CALL-NOW', '12345', '1234567890123456', '++15550142387']) {
       expect(validateContactPhone(phone), phone).toBeInstanceOf(Error)
     }
+  })
+})
+
+describe('normalizePhone', () => {
+  it('keeps digits only and stores blanks as null', () => {
+    expect(normalizePhone('+1 (555) 014-2387')).toBe('15550142387')
+    expect(normalizePhone('13432023162')).toBe('13432023162')
+    expect(normalizePhone('  ')).toBeNull()
+    expect(normalizePhone(null)).toBeNull()
   })
 })
 

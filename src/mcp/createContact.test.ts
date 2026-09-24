@@ -274,6 +274,56 @@ describe('update_contact over MCP', () => {
   })
 })
 
+describe('phone normalization', () => {
+  it('stores digits only on create and update, matching existing rows', async () => {
+    const { db, writes } = mcpDb(({ method }) => (method === 'PATCH' ? json(contactRow()) : undefined))
+    await callMcpTool(db, USER_ID, 'create_contact', { name: 'A', phone: '+1 (555) 014-2387' })
+    await callMcpTool(db, USER_ID, 'update_contact', { id: CONTACT_ID, phone: '555.014.2387' })
+
+    expect(writes().map((write) => write.body?.phone)).toEqual(['15550142387', '5550142387'])
+  })
+})
+
+describe('get_overdue_contacts over MCP', () => {
+  const rows = [
+    { id: 'n2', name: 'Zed New', days_overdue: 0, last_contact_date: null },
+    { id: 'r', name: 'Robin', days_overdue: 21, last_contact_date: '2026-09-01' },
+    { id: 'n1', name: 'Ann New', days_overdue: 0, last_contact_date: null },
+    { id: 'd', name: 'Due Today', days_overdue: 0, last_contact_date: '2026-09-13' },
+    { id: 'm', name: 'Marcus', days_overdue: 8, last_contact_date: '2026-09-01' },
+  ]
+
+  function overdueDb(order: typeof rows) {
+    return mcpDb(({ table }) => (table === 'overdue_contacts' ? json(order) : undefined))
+  }
+
+  it('returns the same deterministic order whatever order the database uses', async () => {
+    const first = overdueDb(rows)
+    const second = overdueDb([...rows].reverse())
+    const a = JSON.parse((await callMcpTool(first.db, USER_ID, 'get_overdue_contacts', {})).text)
+    const b = JSON.parse((await callMcpTool(second.db, USER_ID, 'get_overdue_contacts', {})).text)
+
+    expect(a.map((row: { id: string }) => row.id)).toEqual(['r', 'm', 'd', 'n1', 'n2'])
+    expect(b).toEqual(a)
+    expect(new URL(first.calls[0].url).searchParams.get('order')).toBe(
+      'days_overdue.desc,last_contact_date.desc.nullslast,name.asc,id.asc',
+    )
+  })
+
+  it('flags never-contacted people, and can leave them out', async () => {
+    const all = JSON.parse((await callMcpTool(overdueDb(rows).db, USER_ID, 'get_overdue_contacts', {})).text)
+    expect(all.filter((row: { never_contacted: boolean }) => row.never_contacted).map((row: { id: string }) => row.id)).toEqual([
+      'n1',
+      'n2',
+    ])
+
+    const late = JSON.parse(
+      (await callMcpTool(overdueDb(rows).db, USER_ID, 'get_overdue_contacts', { include_never_contacted: false })).text,
+    )
+    expect(late.map((row: { id: string }) => row.id)).toEqual(['r', 'm', 'd'])
+  })
+})
+
 describe('log_interaction over MCP', () => {
   const today = todayInTimeZone(TIME_ZONE)
 

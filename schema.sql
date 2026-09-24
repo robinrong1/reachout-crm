@@ -51,6 +51,8 @@ ALTER TABLE contacts ADD COLUMN IF NOT EXISTS nudge text;
 ALTER TABLE contacts DROP CONSTRAINT IF EXISTS contacts_nudge_length;
 ALTER TABLE contacts ADD CONSTRAINT contacts_nudge_length CHECK (nudge IS NULL OR char_length(nudge) <= 140);
 ALTER TABLE contacts ADD COLUMN IF NOT EXISTS snoozed_until date;
+-- Phones are stored digits only; the app normalizes on write.
+UPDATE contacts SET phone = NULLIF(regexp_replace(phone, '\D', '', 'g'), '') WHERE phone ~ '\D';
 
 DROP VIEW IF EXISTS overdue_contacts;
 CREATE VIEW overdue_contacts

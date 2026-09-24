@@ -2,7 +2,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import { supabase } from './supabase.ts'
 import type { Contact, ContactInsert, ContactUpdate, Database } from '../types/database.ts'
 import { addDays, localToday } from '../utils/dates.ts'
-import { combinedError, contactInputErrors, normalizeNudge } from './contactFields.ts'
+import { combinedError, contactInputErrors, normalizeNudge, normalizePhone } from './contactFields.ts'
 import { isMissingGroupsSchema } from './groups.ts'
 
 export type Db = SupabaseClient<Database>
@@ -160,7 +160,7 @@ export async function createContact(
     cadence_days: input.cadence_days ?? 30,
     birthday: emptyToNull(input.birthday),
     notes: emptyToNull(input.notes),
-    phone: emptyToNull(input.phone),
+    phone: normalizePhone(input.phone),
     email: emptyToNull(input.email),
   }
   if (input.source === 'gmail_import') row.source = 'gmail_import'
@@ -181,7 +181,7 @@ export async function updateContact(id: string, input: ContactUpdate, db: Db = s
   if ('relationship_type' in input) patch.relationship_type = emptyToNull(input.relationship_type)
   if ('birthday' in input) patch.birthday = emptyToNull(input.birthday)
   if ('notes' in input) patch.notes = emptyToNull(input.notes)
-  if ('phone' in input) patch.phone = emptyToNull(input.phone)
+  if ('phone' in input) patch.phone = normalizePhone(input.phone)
   if ('email' in input) patch.email = emptyToNull(input.email)
 
   const { data, error } = await db.from('contacts').update(patch).eq('id', id).select().single()

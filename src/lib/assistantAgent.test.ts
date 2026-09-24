@@ -39,10 +39,12 @@ describe('geminiTools', () => {
     expect(JSON.stringify(functionDeclarations)).not.toContain('additionalProperties')
   })
 
-  it('omits parameters for tools that take none', () => {
+  it('passes optional parameters through, like the overdue never-contacted filter', () => {
     const [{ functionDeclarations }] = geminiTools()
     const overdue = functionDeclarations.find((tool) => tool.name === 'get_overdue_contacts')
-    expect(overdue && 'parameters' in overdue).toBe(false)
+    expect(overdue && 'parameters' in overdue ? overdue.parameters : null).toMatchObject({
+      properties: { include_never_contacted: { type: 'boolean' } },
+    })
   })
 })
 
