@@ -170,13 +170,6 @@ function PasswordAuth({
           />
         </label>
         {error ? <ErrorBanner message={error} /> : null}
-        {error && !isSignUp ? (
-          <p className="text-sm">
-            <button type="button" className="text-link" onClick={onReset}>
-              No password on this email yet? Choose one.
-            </button>
-          </p>
-        ) : null}
         {info ? (
           <p className="text-sm text-[var(--text)]" role="status">
             {info}
@@ -201,7 +194,7 @@ function PasswordAuth({
             setInfo(null)
           }}
         >
-          {isSignUp ? 'Have a password already? Sign in' : 'Need an account? Create one'}
+          {isSignUp ? 'Already have an account? Sign in' : 'Need an account? Create one'}
         </button>
         <button type="button" className="text-link" onClick={onBack}>
           Back
@@ -230,7 +223,7 @@ function RequestReset({ onBack }: { onBack: () => void }) {
       setError(error.message)
       return
     }
-    setInfo('Check your email for a link. It brings you back here to choose a password.')
+    setInfo('Check your email for a reset link. It brings you back here to choose a new password.')
   }
 
   return (
@@ -238,8 +231,7 @@ function RequestReset({ onBack }: { onBack: () => void }) {
       <BrandHeading />
       <header className="masthead mb-8">
         <p className="masthead-eyebrow">Password</p>
-        <h1 className="masthead-title">Choose a password</h1>
-        <p className="page-kicker">Use this if you forgot yours, or if this email never had one.</p>
+        <h1 className="masthead-title">Reset your password</h1>
       </header>
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
         <label className="flex flex-col gap-1 text-sm">
@@ -261,7 +253,7 @@ function RequestReset({ onBack }: { onBack: () => void }) {
           </p>
         ) : null}
         <button type="submit" disabled={submitting} className="btn btn-primary min-h-11">
-          {submitting ? 'Sending…' : 'Send link'}
+          {submitting ? 'Sending…' : 'Send reset link'}
         </button>
       </form>
       <p className="mt-6 text-sm">
