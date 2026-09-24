@@ -119,8 +119,44 @@ describe('create_contact over MCP', () => {
     expect(result.text).toBe('Could not create that person. Check the fields and try again.')
     expect(result.text).not.toMatch(/contacts_cadence_days_positive/)
     const logged = JSON.parse(String(log.mock.calls[0][0]))
-    expect(logged).toMatchObject({ event: 'mcp_tool_failed', tool: 'create_contact', userId: USER_ID, code: '23514' })
+    expect(logged).toMatchObject({
+      event: 'mcp_tool_failed',
+      tool: 'create_contact',
+      userId: USER_ID,
+      code: '23514',
+      constraint: 'contacts_cadence_days_positive',
+    })
     expect(logged.message).toMatch(/contacts_cadence_days_positive/)
+  })
+
+  it('fails cleanly with no user context, without touching db.auth or the database', async () => {
+    const { db, calls } = mcpDb(echoRow)
+    const result = await callMcpTool(db, '', 'create_contact', { name: 'Test' })
+
+    expect(result).toMatchObject({ isError: true, text: expect.stringMatching(/Reconnect/) })
+    expect(calls).toHaveLength(0)
+  })
+
+  it('fails cleanly when RLS rejects a mismatched user', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {})
+    const { db, calls } = mcpDb(
+      () =>
+        new Response(
+          JSON.stringify({
+            code: '42501',
+            message: 'new row violates row-level security policy for table "contacts"',
+            details: null,
+            hint: null,
+          }),
+          { status: 403, headers: { 'Content-Type': 'application/json' } },
+        ),
+    )
+    const result = await callMcpTool(db, 'someone-else', 'create_contact', { name: 'Test' })
+
+    expect((calls[0].body as { user_id: string }).user_id).toBe('someone-else')
+    expect(result).toMatchObject({ isError: true, text: expect.stringMatching(/Reconnect/) })
+    expect(result.text).not.toMatch(/row-level/)
+    expect(JSON.parse(String(log.mock.calls[0][0]))).toMatchObject({ code: '42501', userId: 'someone-else' })
   })
 
   it('treats a network failure as a backend error: logged, not shown', async () => {

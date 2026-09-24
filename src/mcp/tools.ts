@@ -45,6 +45,16 @@ function isBackendError(error: ErrorLike) {
 
 type Ctx = { tool: string; userId: string }
 
+const RECONNECT = 'The assistant is not allowed to do that for this account. Reconnect it in Settings and try again.'
+
+/** 42501: RLS WITH CHECK rejected the row. PGRST30x: the JWT was missing, invalid, or expired. */
+const AUTH_CODES = new Set(['42501', 'PGRST301', 'PGRST302', 'PGRST303'])
+
+/** PostgREST has no constraint field; Postgres puts the name in the message. */
+function constraintName(message: string | undefined) {
+  return message ? /constraint "([^"]+)"/.exec(message)?.[1] : undefined
+}
+
 /** Validation messages are safe to show. Backend details are logged, never returned. */
 function failWith(ctx: Ctx, error: ErrorLike | null | undefined, fallback?: string): ToolResult {
   if (!error) return fail(fallback ?? failedAction(ctx.tool))
@@ -58,9 +68,11 @@ function failWith(ctx: Ctx, error: ErrorLike | null | undefined, fallback?: stri
       message: error.message,
       details: error.details,
       hint: error.hint,
+      constraint: constraintName(error.message),
     }),
   )
   if (error.code === 'PGRST116') return fail('No contact with that id')
+  if (typeof error.code === 'string' && AUTH_CODES.has(error.code)) return fail(RECONNECT)
   return fail(`${failedAction(ctx.tool)}. Check the fields and try again.`)
 }
 
@@ -230,6 +242,7 @@ async function runTool(db: Db, ctx: Ctx, args: Record<string, unknown>): Promise
   }
 
   if (name === 'create_contact') {
+    if (!userId.trim()) return fail(RECONNECT)
     const nameValue = asString(args.name)
     if (nameValue == null) return fail('Name is required')
     if ('cadence_days' in args && asNumber(args.cadence_days) == null) {

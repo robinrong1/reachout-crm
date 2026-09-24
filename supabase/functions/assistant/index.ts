@@ -43,7 +43,7 @@ function modelErrorText(error: ModelError, model: string) {
   if (error.status === 404) return `Gemini does not offer the model "${model}". Set GEMINI_MODEL to an available model.`
   if (error.status === 429) return 'Gemini usage limit reached. Wait a minute, or check the quota for this API key.'
   if (error.status === 400) return `Gemini could not read the request: ${error.detail.slice(0, 200)}`
-  return 'The assistant is unavailable right now. Try again shortly.'
+  return `The assistant is unavailable right now (Gemini ${error.status}: ${error.detail.slice(0, 200)}). Try again shortly.`
 }
 
 Deno.serve(async (req) => {
