@@ -3,6 +3,7 @@ import { hashMcpToken } from '../lib/mcpToken'
 import { addDays } from '../utils/dates'
 import {
   adminClient,
+  anonClient,
   createTestUser,
   deleteTestUser,
   hasIntegrationEnv,
@@ -243,5 +244,32 @@ describe.skipIf(!hasIntegrationEnv())('row level security', () => {
     const hidden = await other.client.from('mcp_tokens').select('id').eq('id', token.data!.id)
     expect(hidden.error).toBeNull()
     expect(hidden.data).toEqual([])
+  })
+
+  it('reports a password on accounts that chose one', async () => {
+    if (!owner) throw new Error('setup failed')
+    const result = await owner.client.rpc('account_has_password')
+    expect(result.error).toBeNull()
+    expect(result.data).toBe(true)
+  })
+
+  it('reports no password on a link-only account', async () => {
+    const email = `crm-nopw-${crypto.randomUUID()}@example.com`
+    const admin = adminClient()
+    const created = await admin.auth.admin.createUser({ email, email_confirm: true })
+    if (created.error || !created.data.user) throw created.error ?? new Error('could not create link-only user')
+    idsToDelete.push(created.data.user.id)
+
+    const link = await admin.auth.admin.generateLink({ type: 'magiclink', email })
+    const tokenHash = link.data.properties?.hashed_token
+    if (link.error || !tokenHash) throw link.error ?? new Error('could not create a sign-in link')
+
+    const client = anonClient()
+    const verified = await client.auth.verifyOtp({ token_hash: tokenHash, type: 'magiclink' })
+    if (verified.error) throw verified.error
+
+    const result = await client.rpc('account_has_password')
+    expect(result.error).toBeNull()
+    expect(result.data).toBe(false)
   })
 })

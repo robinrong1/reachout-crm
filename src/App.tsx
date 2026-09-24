@@ -9,7 +9,7 @@ import { Sidebar } from './components/Sidebar'
 import { TopBar } from './components/TopBar'
 import { countContacts } from './lib/contacts'
 import { isSupabaseConfigured, supabase } from './lib/supabase'
-import { ensureUserProfile } from './lib/users'
+import { accountHasPassword, ensureUserProfile } from './lib/users'
 import { Auth, ResetPassword } from './pages/Auth'
 import { ContactDetail } from './pages/ContactDetail'
 import { ContactList } from './pages/ContactList'
@@ -155,6 +155,9 @@ function App() {
   const [sessionError, setSessionError] = useState<string | null>(null)
   const [profileError, setProfileError] = useState<string | null>(null)
   const [needsNewPassword, setNeedsNewPassword] = useState(false)
+  const [hasPassword, setHasPassword] = useState<boolean | null>(null)
+  const [passwordCheckError, setPasswordCheckError] = useState<string | null>(null)
+  const [passwordCheckAttempt, setPasswordCheckAttempt] = useState(0)
 
   useEffect(() => {
     if (!isSupabaseConfigured) {
@@ -190,6 +193,8 @@ function App() {
       if (!nextSession) {
         setProfileError(null)
         setNeedsNewPassword(false)
+        setHasPassword(null)
+        setPasswordCheckError(null)
       }
     })
 
@@ -198,6 +203,31 @@ function App() {
       subscription.unsubscribe()
     }
   }, [])
+
+  const userId = session?.user.id
+
+  useEffect(() => {
+    if (!userId || needsNewPassword) {
+      return
+    }
+
+    let cancelled = false
+    setHasPassword(null)
+    setPasswordCheckError(null)
+
+    accountHasPassword().then(({ hasPassword: next, error }) => {
+      if (cancelled) return
+      if (error) {
+        setPasswordCheckError(error.message)
+        return
+      }
+      setHasPassword(next)
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [userId, needsNewPassword, passwordCheckAttempt])
 
   useEffect(() => {
     if (!session?.user) {
@@ -258,7 +288,42 @@ function App() {
   }
 
   if (needsNewPassword) {
-    return <ResetPassword onComplete={() => setNeedsNewPassword(false)} />
+    return <ResetPassword purpose="reset" onComplete={() => setNeedsNewPassword(false)} />
+  }
+
+  if (passwordCheckError) {
+    return (
+      <main className="mx-auto flex min-h-svh w-full max-w-md flex-col justify-center px-4 py-12">
+        <BrandHeading />
+        <ErrorBanner
+          message={passwordCheckError}
+          onRetry={() => {
+            setPasswordCheckAttempt((attempt) => attempt + 1)
+          }}
+        />
+      </main>
+    )
+  }
+
+  if (hasPassword === null) {
+    return (
+      <main className="flex min-h-svh flex-col items-center justify-center gap-3 px-4" aria-busy="true">
+        <BrandMark className="h-12 w-12" label="Reach" />
+        <p role="status">Loading…</p>
+      </main>
+    )
+  }
+
+  if (!hasPassword) {
+    return (
+      <ResetPassword
+        purpose="set"
+        onComplete={() => setHasPassword(true)}
+        onSignOut={() => {
+          void supabase.auth.signOut()
+        }}
+      />
+    )
   }
 
   return (

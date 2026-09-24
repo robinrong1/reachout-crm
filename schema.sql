@@ -523,3 +523,20 @@ GRANT ALL ON TABLE mcp_oauth_clients TO service_role;
 GRANT ALL ON TABLE mcp_oauth_codes TO service_role;
 GRANT ALL ON TABLE mcp_oauth_refresh TO service_role;
 
+-- True only when this session's auth user has a password. Link-only
+-- accounts stay out of the app until they choose one.
+CREATE OR REPLACE FUNCTION account_has_password()
+RETURNS boolean
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = ''
+AS $$
+  SELECT COALESCE(length(u.encrypted_password) > 0, false)
+  FROM auth.users AS u
+  WHERE u.id = auth.uid();
+$$;
+
+REVOKE ALL ON FUNCTION account_has_password() FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION account_has_password() TO authenticated;
+

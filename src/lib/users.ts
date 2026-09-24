@@ -25,6 +25,13 @@ export async function ensureUserProfile(user: User) {
   return { error }
 }
 
+/** False for accounts created by an email link that never chose a password. */
+export async function accountHasPassword() {
+  const { data, error } = await supabase.rpc('account_has_password')
+  if (error) return { hasPassword: false, error }
+  return { hasPassword: data === true, error: null }
+}
+
 export type UserProfile = {
   id: string
   email: string

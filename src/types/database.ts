@@ -283,7 +283,10 @@ export type Database = {
       }
     }
     Functions: {
-      [_ in never]: never
+      account_has_password: {
+        Args: Record<PropertyKey, never>
+        Returns: boolean
+      }
     }
     Enums: {
       [_ in never]: never

@@ -3,17 +3,35 @@ import { BrandHeading, BrandMark } from '../components/BrandMark'
 import { ErrorBanner } from '../components/ErrorBanner'
 import { supabase } from '../lib/supabase'
 
-type View = 'landing' | 'magic' | 'password' | 'reset'
+type View = 'landing' | 'password' | 'reset'
+type PasswordMode = 'sign-in' | 'sign-up'
+
+function authReturnUrl() {
+  if (window.location.pathname.startsWith('/oauth/authorize')) return window.location.href
+  return window.location.origin
+}
 
 export function Auth() {
   const [view, setView] = useState<View>('landing')
+  const [passwordMode, setPasswordMode] = useState<PasswordMode>('sign-up')
+
+  function openPassword(mode: PasswordMode) {
+    setPasswordMode(mode)
+    setView('password')
+  }
 
   return (
     <main className="auth-page">
-      {view === 'landing' ? <Landing onMagic={() => setView('magic')} onPassword={() => setView('password')} /> : null}
-      {view === 'magic' ? <MagicLink onBack={() => setView('landing')} onPassword={() => setView('password')} /> : null}
+      {view === 'landing' ? (
+        <Landing onCreate={() => openPassword('sign-up')} onSignIn={() => openPassword('sign-in')} />
+      ) : null}
       {view === 'password' ? (
-        <PasswordAuth onBack={() => setView('landing')} onMagic={() => setView('magic')} onReset={() => setView('reset')} />
+        <PasswordAuth
+          key={passwordMode}
+          initialMode={passwordMode}
+          onBack={() => setView('landing')}
+          onReset={() => setView('reset')}
+        />
       ) : null}
       {view === 'reset' ? <RequestReset onBack={() => setView('password')} /> : null}
       <p className="flex justify-center gap-4 px-6 pb-8 text-sm">
@@ -31,7 +49,7 @@ export function Auth() {
   )
 }
 
-function Landing({ onMagic, onPassword }: { onMagic: () => void; onPassword: () => void }) {
+function Landing({ onCreate, onSignIn }: { onCreate: () => void; onSignIn: () => void }) {
   return (
     <div className="landing">
       <header className="landing-brand">
@@ -44,11 +62,11 @@ function Landing({ onMagic, onPassword }: { onMagic: () => void; onPassword: () 
           Home tells you who is due. Catch up is the list. A person page is where the conversation lives.
         </p>
         <div className="mt-6 flex flex-wrap items-center gap-4">
-          <button type="button" className="btn btn-primary min-h-11" onClick={onMagic}>
-            Email me a sign-in link
+          <button type="button" className="btn btn-primary min-h-11" onClick={onCreate}>
+            Create your space
           </button>
-          <button type="button" className="text-link" onClick={onPassword}>
-            Use a password
+          <button type="button" className="text-link" onClick={onSignIn}>
+            Sign in
           </button>
         </div>
       </div>
@@ -73,87 +91,16 @@ function Landing({ onMagic, onPassword }: { onMagic: () => void; onPassword: () 
   )
 }
 
-function MagicLink({ onBack, onPassword }: { onBack: () => void; onPassword: () => void }) {
-  const [email, setEmail] = useState('')
-  const [error, setError] = useState<string | null>(null)
-  const [info, setInfo] = useState<string | null>(null)
-  const [submitting, setSubmitting] = useState(false)
-
-  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault()
-    setError(null)
-    setInfo(null)
-    setSubmitting(true)
-    const { error } = await supabase.auth.signInWithOtp({
-      email,
-      options: {
-        emailRedirectTo: window.location.pathname.startsWith('/oauth/authorize')
-          ? window.location.href
-          : window.location.origin,
-      },
-    })
-    setSubmitting(false)
-    if (error) {
-      setError(error.message)
-      return
-    }
-    setInfo('Check your email for a sign-in link. Open it and you will land back here signed in.')
-  }
-
-  return (
-    <div className="mx-auto flex w-full max-w-md flex-col justify-center px-6 py-12">
-      <BrandHeading />
-      <header className="masthead mb-8">
-        <p className="masthead-eyebrow">Sign in</p>
-        <h1 className="masthead-title">Email me a link</h1>
-        <p className="page-kicker">No password. The link signs you in, including the first time.</p>
-      </header>
-      <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
-        <label className="flex flex-col gap-1 text-sm">
-          Email
-          <input
-            type="email"
-            name="email"
-            autoComplete="email"
-            required
-            value={email}
-            onChange={(event) => setEmail(event.target.value)}
-            className="input-field"
-          />
-        </label>
-        {error ? <ErrorBanner message={error} /> : null}
-        {info ? (
-          <p className="text-sm text-[var(--text)]" role="status">
-            {info}
-          </p>
-        ) : null}
-        <button type="submit" disabled={submitting} className="btn btn-primary min-h-11">
-          {submitting ? 'Sending…' : 'Send link'}
-        </button>
-      </form>
-      <p className="mt-6 text-sm">
-        <button type="button" className="text-link" onClick={onPassword}>
-          Use a password instead
-        </button>
-        {' · '}
-        <button type="button" className="text-link" onClick={onBack}>
-          Back
-        </button>
-      </p>
-    </div>
-  )
-}
-
 function PasswordAuth({
+  initialMode,
   onBack,
-  onMagic,
   onReset,
 }: {
+  initialMode: PasswordMode
   onBack: () => void
-  onMagic: () => void
   onReset: () => void
 }) {
-  const [mode, setMode] = useState<'sign-in' | 'sign-up'>('sign-in')
+  const [mode, setMode] = useState<PasswordMode>(initialMode)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
@@ -171,16 +118,14 @@ function PasswordAuth({
         const { data, error } = await supabase.auth.signUp({
           email,
           password,
-          options: { emailRedirectTo: window.location.origin },
+          options: { emailRedirectTo: authReturnUrl() },
         })
         if (error) {
           setError(error.message)
           return
         }
         if (!data.session) {
-          setInfo(
-            'Check your email to confirm this account before the password sign-in works. A magic link is quicker if you want a session in one sitting.',
-          )
+          setInfo('Check your email to confirm this account. Then sign in with the password you just chose.')
         }
         return
       }
@@ -225,6 +170,13 @@ function PasswordAuth({
           />
         </label>
         {error ? <ErrorBanner message={error} /> : null}
+        {error && !isSignUp ? (
+          <p className="text-sm">
+            <button type="button" className="text-link" onClick={onReset}>
+              No password on this email yet? Choose one.
+            </button>
+          </p>
+        ) : null}
         {info ? (
           <p className="text-sm text-[var(--text)]" role="status">
             {info}
@@ -251,9 +203,6 @@ function PasswordAuth({
         >
           {isSignUp ? 'Have a password already? Sign in' : 'Need an account? Create one'}
         </button>
-        <button type="button" className="text-link" onClick={onMagic}>
-          Email me a link instead
-        </button>
         <button type="button" className="text-link" onClick={onBack}>
           Back
         </button>
@@ -274,14 +223,14 @@ function RequestReset({ onBack }: { onBack: () => void }) {
     setInfo(null)
     setSubmitting(true)
     const { error } = await supabase.auth.resetPasswordForEmail(email, {
-      redirectTo: window.location.origin,
+      redirectTo: authReturnUrl(),
     })
     setSubmitting(false)
     if (error) {
       setError(error.message)
       return
     }
-    setInfo('Check your email for a reset link. It brings you back here to choose a new password.')
+    setInfo('Check your email for a link. It brings you back here to choose a password.')
   }
 
   return (
@@ -289,7 +238,8 @@ function RequestReset({ onBack }: { onBack: () => void }) {
       <BrandHeading />
       <header className="masthead mb-8">
         <p className="masthead-eyebrow">Password</p>
-        <h1 className="masthead-title">Reset your password</h1>
+        <h1 className="masthead-title">Choose a password</h1>
+        <p className="page-kicker">Use this if you forgot yours, or if this email never had one.</p>
       </header>
       <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
         <label className="flex flex-col gap-1 text-sm">
@@ -311,7 +261,7 @@ function RequestReset({ onBack }: { onBack: () => void }) {
           </p>
         ) : null}
         <button type="submit" disabled={submitting} className="btn btn-primary min-h-11">
-          {submitting ? 'Sending…' : 'Send reset link'}
+          {submitting ? 'Sending…' : 'Send link'}
         </button>
       </form>
       <p className="mt-6 text-sm">
@@ -323,10 +273,19 @@ function RequestReset({ onBack }: { onBack: () => void }) {
   )
 }
 
-export function ResetPassword({ onComplete }: { onComplete: () => void }) {
+export function ResetPassword({
+  onComplete,
+  purpose,
+  onSignOut,
+}: {
+  onComplete: () => void
+  purpose: 'set' | 'reset'
+  onSignOut?: () => void
+}) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [submitting, setSubmitting] = useState(false)
+  const choosingFirst = purpose === 'set'
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault()
@@ -347,11 +306,12 @@ export function ResetPassword({ onComplete }: { onComplete: () => void }) {
         <BrandHeading />
         <header className="masthead mb-8">
           <p className="masthead-eyebrow">Password</p>
-          <h1 className="masthead-title">Choose a new password</h1>
+          <h1 className="masthead-title">{choosingFirst ? 'Choose a password' : 'Choose a new password'}</h1>
+          {choosingFirst ? <p className="page-kicker">Choose a password to keep using Reach.</p> : null}
         </header>
         <form className="flex flex-col gap-4" onSubmit={handleSubmit}>
           <label className="flex flex-col gap-1 text-sm">
-            New password
+            {choosingFirst ? 'Password' : 'New password'}
             <input
               type="password"
               name="password"
@@ -368,6 +328,13 @@ export function ResetPassword({ onComplete }: { onComplete: () => void }) {
             {submitting ? 'Saving…' : 'Save password'}
           </button>
         </form>
+        {onSignOut ? (
+          <p className="mt-6 text-sm">
+            <button type="button" className="text-link" onClick={onSignOut}>
+              Sign out
+            </button>
+          </p>
+        ) : null}
       </div>
     </main>
   )

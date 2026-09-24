@@ -111,8 +111,9 @@ The system should not attempt to infer relationship importance or automatically 
 
 ### Account
 
-* A logged-out visitor sees what Reach is, can request a magic-link sign-in, and can reset a password.
-* The first session, including a magic link, creates the `public.users` profile.
+* A logged-out visitor sees what Reach is, can create an account with a password, sign in with that password, and reset a password.
+* Reach does not leave someone in a passwordless account. A person already signed in without a password chooses one before Home, Welcome, or assistant consent.
+* The first session creates the `public.users` profile.
 
 ### Gmail import (v2)
 
