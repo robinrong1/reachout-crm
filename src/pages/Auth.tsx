@@ -59,11 +59,11 @@ function Landing({ onCreate, onSignIn }: { onCreate: () => void; onSignIn: () =>
       <div className="landing-copy">
         <h1 className="landing-title">A quiet reminder of the people you meant to stay close to.</h1>
         <p className="page-kicker">
-          Home tells you who is due. Catch up is the list. A person page is where the conversation lives.
+          Add the people you care about. Reach tells you when you are due to talk to them.
         </p>
         <div className="mt-6 flex flex-wrap items-center gap-4">
           <button type="button" className="btn btn-primary min-h-11" onClick={onCreate}>
-            Create your space
+            Start free
           </button>
           <button type="button" className="text-link" onClick={onSignIn}>
             Sign in
