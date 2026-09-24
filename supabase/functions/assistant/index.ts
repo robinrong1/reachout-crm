@@ -39,6 +39,7 @@ function modelErrorText(error: ModelError, model: string) {
   if (detail.includes('api key') || error.status === 401 || error.status === 403) {
     return 'Gemini rejected the API key. Check GEMINI_API_KEY in Supabase secrets.'
   }
+  if (error.status === 402) return 'Gemini credits are used up for this API key. Add credits in Google AI Studio.'
   if (error.status === 404) return `Gemini does not offer the model "${model}". Set GEMINI_MODEL to an available model.`
   if (error.status === 429) return 'Gemini usage limit reached. Wait a minute, or check the quota for this API key.'
   if (error.status === 400) return `Gemini could not read the request: ${error.detail.slice(0, 200)}`
