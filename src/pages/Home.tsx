@@ -16,6 +16,7 @@ import {
 } from '../lib/home'
 import { reachedOutToday } from '../lib/interactions'
 import { listOverdueContacts, type OverdueContact } from '../lib/overdue'
+import { useDataVersion } from '../lib/useDataVersion'
 import { getUserTimezone } from '../lib/users'
 import { formatMonthDay, formatWeekday, todayInTimeZone } from '../utils/dates'
 import type { Group } from '../types/database'
@@ -180,6 +181,7 @@ export function Home() {
   const [error, setError] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
+  const dataVersion = useDataVersion()
 
   async function load() {
     const [overdueResult, contactsResult, timezoneResult, groupResult] = await Promise.all([
@@ -258,7 +260,7 @@ export function Home() {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [dataVersion])
 
   const catchUp = today ? buildCatchUp(overdue, contacts, today) : []
   const birthdays = today ? buildUpcomingBirthdays(contacts, today) : []

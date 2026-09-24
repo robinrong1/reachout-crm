@@ -26,6 +26,50 @@ function fail(message: string): ToolResult {
   return { text: message, isError: true }
 }
 
+const FAILED_ACTION: Record<string, string> = {
+  create_contact: 'Could not create that person',
+  update_contact: 'Could not update that person',
+  log_interaction: 'Could not log that conversation',
+}
+
+function failedAction(tool: string) {
+  return FAILED_ACTION[tool] ?? 'Could not load that'
+}
+
+type ErrorLike = { message?: string; code?: unknown; details?: unknown; hint?: unknown; name?: string; stack?: string }
+
+/** Postgres / PostgREST / auth errors carry a code; our own validation errors are plain Errors. */
+function isBackendError(error: ErrorLike) {
+  return typeof error.code === 'string' || error.details != null || error.hint != null
+}
+
+type Ctx = { tool: string; userId: string }
+
+/** Validation messages are safe to show. Backend details are logged, never returned. */
+function failWith(ctx: Ctx, error: ErrorLike | null | undefined, fallback?: string): ToolResult {
+  if (!error) return fail(fallback ?? failedAction(ctx.tool))
+  if (!isBackendError(error)) return fail(error.message || failedAction(ctx.tool))
+  console.error(
+    JSON.stringify({
+      event: 'mcp_tool_failed',
+      tool: ctx.tool,
+      userId: ctx.userId,
+      code: error.code,
+      message: error.message,
+      details: error.details,
+      hint: error.hint,
+    }),
+  )
+  if (error.code === 'PGRST116') return fail('No contact with that id')
+  return fail(`${failedAction(ctx.tool)}. Check the fields and try again.`)
+}
+
+function isIsoDate(value: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false
+  const parsed = new Date(`${value}T00:00:00Z`)
+  return !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(value)
+}
+
 function asRecord(value: unknown) {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
   return value as Record<string, unknown>
@@ -143,11 +187,31 @@ function contactFields(args: Record<string, unknown>) {
 }
 
 export async function callMcpTool(db: Db, userId: string, name: string, rawArgs: unknown): Promise<ToolResult> {
-  const args = asRecord(rawArgs)
+  try {
+    return await runTool(db, { tool: name, userId }, asRecord(rawArgs))
+  } catch (thrown) {
+    const error = (thrown instanceof Error ? thrown : new Error(String(thrown))) as ErrorLike
+    console.error(
+      JSON.stringify({
+        event: 'mcp_tool_threw',
+        tool: name,
+        userId,
+        name: error.name,
+        message: error.message,
+        code: error.code,
+        stack: error.stack,
+      }),
+    )
+    return fail(`${failedAction(name)}. Try again shortly.`)
+  }
+}
+
+async function runTool(db: Db, ctx: Ctx, args: Record<string, unknown>): Promise<ToolResult> {
+  const { tool: name, userId } = ctx
 
   if (name === 'find_contacts') {
     const result = await findContacts(asString(args.query) ?? '', db)
-    if (result.error) return fail(result.error.message)
+    if (result.error) return failWith(ctx, result.error)
     return ok(result.data)
   }
 
@@ -155,11 +219,11 @@ export async function callMcpTool(db: Db, userId: string, name: string, rawArgs:
     const id = asString(args.id)?.trim()
     if (!id) return fail('id is required')
     const contact = await getContact(id, db)
-    if (contact.error) return fail(contact.error.message)
+    if (contact.error) return failWith(ctx, contact.error)
     if (!contact.data) return fail('No contact with that id')
     if (args.include_interactions === true) {
       const history = await listInteractions(id, db)
-      if (history.error) return fail(history.error.message)
+      if (history.error) return failWith(ctx, history.error)
       return ok({ contact: contact.data, interactions: history.data })
     }
     return ok({ contact: contact.data })
@@ -171,6 +235,8 @@ export async function callMcpTool(db: Db, userId: string, name: string, rawArgs:
     if ('cadence_days' in args && asNumber(args.cadence_days) == null) {
       return fail('cadence_days must be a whole number of days greater than 0')
     }
+    const birthday = asString(args.birthday)?.trim()
+    if (birthday && !isIsoDate(birthday)) return fail('birthday must be a real date as YYYY-MM-DD')
     const result = await createContact(
       {
         name: nameValue,
@@ -182,8 +248,9 @@ export async function callMcpTool(db: Db, userId: string, name: string, rawArgs:
         email: asString(args.email),
       },
       db,
+      userId,
     )
-    if (result.error || !result.data) return fail(result.error?.message ?? 'Could not create that person')
+    if (result.error || !result.data) return failWith(ctx, result.error)
     return ok(result.data)
   }
 
@@ -193,10 +260,12 @@ export async function callMcpTool(db: Db, userId: string, name: string, rawArgs:
     if ('cadence_days' in args && asNumber(args.cadence_days) == null) {
       return fail('cadence_days must be a whole number of days greater than 0')
     }
+    const birthday = asString(args.birthday)?.trim()
+    if (birthday && !isIsoDate(birthday)) return fail('birthday must be a real date as YYYY-MM-DD')
     const fields = contactFields(args)
     if (Object.keys(fields).length === 0) return fail('Say which fields to change')
     const result = await updateContact(id, fields, db)
-    if (result.error || !result.data) return fail(result.error?.message ?? 'Could not update that person')
+    if (result.error || !result.data) return failWith(ctx, result.error)
     return ok(result.data)
   }
 
@@ -204,19 +273,19 @@ export async function callMcpTool(db: Db, userId: string, name: string, rawArgs:
     const contactId = asString(args.contact_id)?.trim()
     if (!contactId) return fail('contact_id is required')
     const profile = await db.from('users').select('timezone').eq('id', userId).maybeSingle()
-    if (profile.error) return fail(profile.error.message)
+    if (profile.error) return failWith(ctx, profile.error)
     const occurredOn = asString(args.occurred_on)?.trim() || todayInTimeZone(profile.data?.timezone || 'UTC')
     const result = await createInteraction(
       { contact_id: contactId, occurred_on: occurredOn, note: asString(args.note) },
       db,
     )
-    if (result.error || !result.data) return fail(result.error?.message ?? 'Could not log that conversation')
+    if (result.error || !result.data) return failWith(ctx, result.error)
     return ok(result.data)
   }
 
   if (name === 'get_overdue_contacts') {
     const result = await listOverdueContacts(db)
-    if (result.error) return fail(result.error.message)
+    if (result.error) return failWith(ctx, result.error)
     return ok(result.data)
   }
 

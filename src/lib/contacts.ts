@@ -106,6 +106,18 @@ export async function listActiveContactOptions() {
   return { data: (data ?? null) as { id: string; name: string }[] | null, error }
 }
 
+export type SearchOption = Pick<Contact, 'id' | 'name' | 'email' | 'relationship_type'>
+
+export async function listSearchOptions() {
+  const { data, error } = await supabase
+    .from('contacts')
+    .select('id, name, email, relationship_type')
+    .eq('archived', false)
+    .order('name', { ascending: true })
+
+  return { data: (data ?? null) as SearchOption[] | null, error }
+}
+
 export async function findContacts(query: string, db: Db = supabase) {
   const { data, error } = await db
     .from('contacts')
@@ -124,7 +136,11 @@ export async function getContact(id: string, db: Db = supabase) {
   return { data: (data ?? null) as Contact | null, error }
 }
 
-export async function createContact(input: ContactInsert, db: Db = supabase) {
+/**
+ * Pass `userId` when `db` is an accessToken client (the MCP server): those clients
+ * throw on any `db.auth` access. RLS still requires it to match the JWT subject.
+ */
+export async function createContact(input: ContactInsert, db: Db = supabase, userId?: string) {
   const nameError = validateContactName(input.name)
   if (nameError) return { data: null, error: nameError }
   const cadenceError = validateCadenceDays(input.cadence_days)
@@ -134,11 +150,11 @@ export async function createContact(input: ContactInsert, db: Db = supabase) {
   const nudge = normalizeNudge(input.nudge)
   if (nudge.error) return { data: null, error: nudge.error }
 
-  const { userId, error: userError } = await requireUserId(db)
-  if (userError || !userId) return { data: null, error: userError }
+  const owner = userId ? { userId, error: null } : await requireUserId(db)
+  if (owner.error || !owner.userId) return { data: null, error: owner.error }
 
   const row: Database['public']['Tables']['contacts']['Insert'] = {
-    user_id: userId,
+    user_id: owner.userId,
     name: input.name.trim(),
     relationship_type: emptyToNull(input.relationship_type),
     cadence_days: input.cadence_days ?? 30,

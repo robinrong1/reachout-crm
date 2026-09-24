@@ -80,6 +80,7 @@ The system should not attempt to infer relationship importance or automatically 
 * As a user, I can edit a contact.
 * As a user, I can archive a contact.
 * As a user, I can view all active contacts.
+* As a user, I can search people from the top bar on any page and open the person directly. Pressing Enter without picking someone opens the filtered Contacts list. On Contacts, the same box filters the table as I type.
 * As a user, I can view archived contacts separately.
 
 ### Interaction tracking

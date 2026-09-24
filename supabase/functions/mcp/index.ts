@@ -119,7 +119,16 @@ Deno.serve(async (req) => {
     return jsonResponse(200, { jsonrpc: '2.0', id: body.id, result }, req)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Request failed'
-    console.error(JSON.stringify({ event: 'mcp_call_failed', userId: found.data.user_id, message }))
+    console.error(
+      JSON.stringify({
+        event: 'mcp_call_failed',
+        userId: found.data.user_id,
+        method: body.method,
+        tool: body.params?.name,
+        message,
+        stack: error instanceof Error ? error.stack : undefined,
+      }),
+    )
     return jsonResponse(200, { jsonrpc: '2.0', id: body.id, error: { code: -32000, message } }, req)
   }
 })

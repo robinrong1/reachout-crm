@@ -16,6 +16,7 @@ import {
 import { formatCadence } from '../lib/cadence'
 import { timelineEventLabel, timelineNoteBody } from '../lib/timeline'
 import { isHiddenBySnooze, relationshipStateForContact } from '../lib/overdue'
+import { useDataVersion } from '../lib/useDataVersion'
 import { getUserTimezone } from '../lib/users'
 import { formatDisplayDate, todayInTimeZone } from '../utils/dates'
 import type { Contact, Group, Interaction } from '../types/database'
@@ -42,6 +43,7 @@ export function ContactDetail() {
   const [reachingOut, setReachingOut] = useState(false)
   const [groups, setGroups] = useState<Group[]>([])
   const [groupIds, setGroupIds] = useState<string[]>([])
+  const dataVersion = useDataVersion()
 
   async function loadInteractions() {
     const { data, error } = await listInteractions(id)
@@ -99,7 +101,7 @@ export function ContactDetail() {
     return () => {
       cancelled = true
     }
-  }, [id])
+  }, [id, dataVersion])
 
   if (loading) {
     return (

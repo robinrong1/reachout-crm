@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { BrowserRouter, matchPath, Navigate, Outlet, Route, Routes, useLocation, useNavigate } from 'react-router'
 import type { Session } from '@supabase/supabase-js'
+import { AssistantPanel } from './components/AssistantPanel'
 import { BrandHeading, BrandMark } from './components/BrandMark'
 import { ErrorBanner } from './components/ErrorBanner'
 import { NavSnackbar } from './components/NavSnackbar'
@@ -63,6 +64,22 @@ function AppShell({
 }) {
   const location = useLocation()
   const current = navCurrent(location.pathname)
+  const [assistantOpen, setAssistantOpen] = useState(false)
+  const assistantButtonRef = useRef<HTMLButtonElement>(null)
+
+  const closeAssistant = useCallback(() => {
+    setAssistantOpen(false)
+    assistantButtonRef.current?.focus()
+  }, [])
+
+  useEffect(() => {
+    if (!assistantOpen) return
+    function onKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') closeAssistant()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [assistantOpen, closeAssistant])
 
   return (
     <div className="flex min-h-svh bg-[var(--paper)] text-left">
@@ -71,7 +88,12 @@ function AppShell({
       </a>
       <Sidebar current={current} email={email} onSignOut={onSignOut} />
       <div className="flex min-w-0 flex-1 flex-col paper-canvas">
-        <TopBar compact={current === 'timeline'} />
+        <TopBar
+          compact={current === 'timeline'}
+          assistantOpen={assistantOpen}
+          assistantButtonRef={assistantButtonRef}
+          onToggleAssistant={() => (assistantOpen ? closeAssistant() : setAssistantOpen(true))}
+        />
         <main id="main-content" className="paper-main" tabIndex={-1}>
           {profileError ? (
             <div className="mb-6">
@@ -84,6 +106,7 @@ function AppShell({
         </main>
       </div>
       <NavSnackbar current={current} />
+      <AssistantPanel open={assistantOpen} onClose={closeAssistant} />
     </div>
   )
 }

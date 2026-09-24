@@ -15,6 +15,7 @@ import {
   renameGroup,
   setGroupCadence,
 } from '../lib/groups'
+import { useDataVersion } from '../lib/useDataVersion'
 import { formatDisplayDate } from '../utils/dates'
 import type { Group } from '../types/database'
 
@@ -33,6 +34,7 @@ export function ContactList() {
   const [newGroupName, setNewGroupName] = useState('')
   const [addingGroup, setAddingGroup] = useState(false)
   const [pickerId, setPickerId] = useState<string | null>(null)
+  const dataVersion = useDataVersion()
 
   async function load(archived: boolean) {
     const [contactResult, groupResult] = await Promise.all([listContacts(archived), listGroups()])
@@ -74,7 +76,7 @@ export function ContactList() {
     return () => {
       cancelled = true
     }
-  }, [showArchived])
+  }, [showArchived, dataVersion])
 
   const visible = useMemo(
     () => sortDirectory(filterDirectory(contacts, query, groupFilter), sort, sortDir),

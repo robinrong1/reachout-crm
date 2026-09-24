@@ -1,3 +1,11 @@
+@font-face {
+  font-family: "Source Sans 3";
+  src: url("/fonts/source-sans-3-latin.woff2") format("woff2");
+  font-weight: 200 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 :root {
   --text: #6f6a63;
   --text-h: #1c1916;
@@ -22,7 +30,7 @@ body {
   margin: 0;
   background: var(--paper);
   color: var(--text);
-  font: 16px/160% "Segoe UI", system-ui, sans-serif;
+  font: 16px/160% "Source Sans 3", "Seravek", "Gill Sans Nova", "Segoe UI", system-ui, sans-serif;
 }
 
 main {

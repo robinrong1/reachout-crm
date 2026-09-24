@@ -7,6 +7,7 @@ import { primaryGroupName } from '../lib/groupHeadings'
 import { listContactGroups, listGroups } from '../lib/groups'
 import { reachedOutToday } from '../lib/interactions'
 import { listOverdueContacts, type OverdueContact } from '../lib/overdue'
+import { useDataVersion } from '../lib/useDataVersion'
 import { getUserTimezone } from '../lib/users'
 import { todayInTimeZone } from '../utils/dates'
 import type { ContactGroup, Group } from '../types/database'
@@ -34,6 +35,7 @@ export function Dashboard({ onViewContact }: DashboardProps) {
   const [loading, setLoading] = useState(true)
   const [reachingOutId, setReachingOutId] = useState<string | null>(null)
   const [today, setToday] = useState<string | null>(null)
+  const dataVersion = useDataVersion()
 
   function applyCatchUp(result: Awaited<ReturnType<typeof loadCatchUp>>) {
     setToday(todayInTimeZone(result.timezoneResult.timezone || 'UTC'))
@@ -74,7 +76,7 @@ export function Dashboard({ onViewContact }: DashboardProps) {
     return () => {
       cancelled = true
     }
-  }, [])
+  }, [dataVersion])
 
   async function handleSnooze(contactId: string) {
     if (!today) return
