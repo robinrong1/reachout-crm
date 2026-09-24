@@ -2,9 +2,8 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2'
 import { corsHeaders, jsonResponse } from '../_shared/cors.ts'
 import { decryptString } from '../../../src/lib/secretBox.ts'
 
-const INBOX_CAP = 200
-const SENT_CAP = 200
-const FETCH_CONCURRENCY = 8
+const SENT_CAP = 300
+const FETCH_CONCURRENCY = 5
 const METADATA_HEADERS = ['From', 'To', 'Cc', 'Date', 'List-Unsubscribe']
 
 type HeaderMessage = {
@@ -13,6 +12,7 @@ type HeaderMessage = {
   cc: string
   date: string
   listUnsubscribe: boolean
+  sent: boolean
 }
 
 Deno.serve(async (req) => {
@@ -82,12 +82,15 @@ Deno.serve(async (req) => {
       return jsonResponse(502, { error: 'Could not read the Gmail account address.' }, req)
     }
 
-    const inboxIds = await listMessageIds(access.token, 'INBOX', INBOX_CAP)
-    const sentIds = await listMessageIds(access.token, 'SENT', SENT_CAP)
-    const ids = [...new Set([...inboxIds, ...sentIds])]
-    const messages = (await mapPool(ids, FETCH_CONCURRENCY, (id) => fetchHeader(access.token, id))).filter(
-      (message): message is HeaderMessage => message !== null,
-    )
+    // Replies are often archived or older than the newest inbox mail, so read whole
+    // conversations the user wrote in rather than the inbox.
+    const threadIds = await listSentThreadIds(access.token, SENT_CAP)
+    const threads = await mapPool(threadIds, FETCH_CONCURRENCY, (id) => fetchThread(access.token, id))
+    const failed = threads.filter((thread) => thread === null).length
+    if (threadIds.length > 0 && failed === threadIds.length) {
+      throw new Error('every thread request failed')
+    }
+    const messages = threads.flatMap((thread) => thread ?? [])
 
     const synced = await admin
       .from('google_connections')
@@ -97,7 +100,15 @@ Deno.serve(async (req) => {
       console.error(JSON.stringify({ event: 'gmail_sync_stamp_failed', userId, message: synced.error.message }))
     }
 
-    console.log(JSON.stringify({ event: 'gmail_import_finished', userId, messages: messages.length }))
+    console.log(
+      JSON.stringify({
+        event: 'gmail_import_finished',
+        userId,
+        threads: threadIds.length,
+        failedThreads: failed,
+        messages: messages.length,
+      }),
+    )
     return jsonResponse(200, { ownerEmail, messages }, req)
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Gmail request failed'
@@ -122,47 +133,66 @@ async function refreshAccessToken(refreshToken: string, clientId: string, client
   return { token, status: res.status }
 }
 
-async function listMessageIds(accessToken: string, labelId: string, cap: number) {
-  const ids: string[] = []
-  let pageToken = ''
-  while (ids.length < cap) {
-    const url = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages')
-    url.searchParams.set('labelIds', labelId)
-    url.searchParams.set('maxResults', String(Math.min(50, cap - ids.length)))
-    if (pageToken) url.searchParams.set('pageToken', pageToken)
+async function gmailGet(url: URL, accessToken: string) {
+  for (let attempt = 0; ; attempt += 1) {
     const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
+    const retryable = res.status === 429 || res.status >= 500
+    if (!retryable || attempt >= 3) return res
+    await res.body?.cancel()
+    await new Promise((resolve) => setTimeout(resolve, 500 * 2 ** attempt))
+  }
+}
+
+async function listSentThreadIds(accessToken: string, cap: number) {
+  const threadIds = new Set<string>()
+  let seen = 0
+  let pageToken = ''
+  while (seen < cap) {
+    const url = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages')
+    url.searchParams.set('labelIds', 'SENT')
+    url.searchParams.set('maxResults', String(Math.min(100, cap - seen)))
+    if (pageToken) url.searchParams.set('pageToken', pageToken)
+    const res = await gmailGet(url, accessToken)
     if (!res.ok) throw new Error(`gmail list ${res.status}`)
     const body = await res.json()
     for (const message of body.messages ?? []) {
-      if (typeof message.id === 'string') ids.push(message.id)
+      seen += 1
+      if (typeof message.threadId === 'string') threadIds.add(message.threadId)
     }
     pageToken = typeof body.nextPageToken === 'string' ? body.nextPageToken : ''
     if (!pageToken) break
   }
-  return ids
+  return [...threadIds]
 }
 
-async function fetchHeader(accessToken: string, id: string): Promise<HeaderMessage | null> {
-  const url = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/messages/${id}`)
+async function fetchThread(accessToken: string, id: string): Promise<HeaderMessage[] | null> {
+  const url = new URL(`https://gmail.googleapis.com/gmail/v1/users/me/threads/${id}`)
   url.searchParams.set('format', 'metadata')
   for (const name of METADATA_HEADERS) url.searchParams.append('metadataHeaders', name)
-  const res = await fetch(url, { headers: { Authorization: `Bearer ${accessToken}` } })
-  if (!res.ok) return null
+  const res = await gmailGet(url, accessToken)
+  if (!res.ok) {
+    await res.body?.cancel()
+    return null
+  }
   const body = await res.json()
-  const headers = Array.isArray(body.payload?.headers) ? body.payload.headers : []
-  const value = (name: string) => {
-    const found = headers.find(
-      (header: { name?: string; value?: string }) => header.name?.toLowerCase() === name.toLowerCase(),
-    )
-    return typeof found?.value === 'string' ? found.value : ''
-  }
-  return {
-    from: value('From'),
-    to: value('To'),
-    cc: value('Cc'),
-    date: value('Date'),
-    listUnsubscribe: value('List-Unsubscribe').length > 0,
-  }
+  const messages = Array.isArray(body.messages) ? body.messages : []
+  return messages.map((message: { labelIds?: string[]; payload?: { headers?: unknown } }) => {
+    const headers = Array.isArray(message.payload?.headers) ? message.payload.headers : []
+    const value = (name: string) => {
+      const found = headers.find(
+        (header: { name?: string; value?: string }) => header.name?.toLowerCase() === name.toLowerCase(),
+      )
+      return typeof found?.value === 'string' ? found.value : ''
+    }
+    return {
+      from: value('From'),
+      to: value('To'),
+      cc: value('Cc'),
+      date: value('Date'),
+      listUnsubscribe: value('List-Unsubscribe').length > 0,
+      sent: Array.isArray(message.labelIds) && message.labelIds.includes('SENT'),
+    }
+  })
 }
 
 async function mapPool<T, R>(items: T[], limit: number, fn: (item: T) => Promise<R>) {

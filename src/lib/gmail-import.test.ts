@@ -77,6 +77,23 @@ describe('suggestGmailContacts', () => {
     ])
   })
 
+  it('counts mail sent from an alias as the owner writing', () => {
+    const suggestions = suggest([
+      message('Me <me@alias.test>', 'Sam <sam@example.com>', '2026-02-03', { sent: true }),
+      message('Sam <sam@example.com>', 'me@alias.test', '2026-02-04'),
+    ])
+    expect(suggestions.map((person) => person.email)).toEqual(['sam@example.com'])
+  })
+
+  it('does not suggest the alias itself', () => {
+    expect(
+      suggest([
+        message('me@alias.test', 'me@alias.test', '2026-02-03', { sent: true }),
+        message('me@alias.test', owner, '2026-02-04'),
+      ]),
+    ).toEqual([])
+  })
+
   it('drops the owner and addresses already saved', () => {
     expect(
       suggest(

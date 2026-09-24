@@ -84,7 +84,7 @@ export function GmailReview() {
           People you write
         </h2>
         <p className="page-kicker">
-          Headers only, from recent inbox and sent mail. Nothing is saved until you accept someone.
+          Headers only, from conversations you recently wrote in. Nothing is saved until you accept someone.
         </p>
       </header>
 

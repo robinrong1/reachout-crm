@@ -6,6 +6,8 @@ export type GmailHeaderMessage = {
   cc: string
   date: string
   listUnsubscribe: boolean
+  /** Carries Gmail's SENT label, so mail sent from an alias still counts as the owner's. */
+  sent?: boolean
 }
 
 export type GmailSuggestion = {
@@ -151,9 +153,9 @@ export function suggestGmailContacts(
       if (!recipients.has(mailbox.email)) recipients.set(mailbox.email, mailbox.name)
     }
 
-    if (from.email === owner) {
+    if (message.sent || from.email === owner) {
       for (const [email, name] of recipients) {
-        if (email === owner) continue
+        if (email === owner || email === from.email) continue
         const bucket = bucketFor(people, email)
         bucket.sent += 1
         rememberName(bucket, name, day)
